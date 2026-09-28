@@ -54,8 +54,12 @@ func finding(file string, start, end int) review.Finding {
 func TestGround(t *testing.T) {
 	d := parse(t, sample)
 
-	secret := finding("src/config.ts", 1, 1)
-	secret.Kind = review.KindSecretLeak
+	// A model can label any finding a scanner kind. In reviewer-core that
+	// skipped the line check, so a made-up line passed.
+	labelledMadeUp := finding("src/config.ts", 1, 1)
+	labelledMadeUp.Kind = review.KindHook
+	labelledReal := finding("src/config.ts", 11, 11)
+	labelledReal.Kind = review.KindSecretLeak
 
 	tests := []struct {
 		name       string
@@ -66,7 +70,8 @@ func TestGround(t *testing.T) {
 		{"line in a hunk", finding("src/config.ts", 12, 12), true, ""},
 		{"line outside every hunk", finding("src/config.ts", 999, 999), false, "not in any diff hunk"},
 		{"file not in the diff", finding("src/not-here.ts", 12, 12), false, "is not in the diff"},
-		{"whole-file kind needs only the file", secret, true, ""},
+		{"scanner kind doesn't skip the line check", labelledMadeUp, false, "not in any diff hunk"},
+		{"scanner kind on a shown line", labelledReal, true, ""},
 		{"range overlapping added lines", finding("src/api/users.ts", 45, 52), true, ""},
 		{"reversed range", finding("src/api/users.ts", 52, 45), true, ""},
 		{"huge range overlapping the diff", finding("src/config.ts", 1, math.MaxInt), true, ""},

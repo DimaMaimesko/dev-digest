@@ -23,8 +23,7 @@ type Dropped struct {
 // removes locations a model made up.
 //
 // A finding is kept when its file is in the diff and its line range overlaps a
-// line shown by one of that file's hunks. Findings from whole-file scanners
-// (see Kind) only need their file to be in the diff.
+// line shown by one of that file's hunks, whatever its Kind.
 func Ground(findings []Finding, d diff.Diff) Grounding {
 	var g Grounding
 	for _, f := range findings {
@@ -35,7 +34,7 @@ func Ground(findings []Finding, d diff.Diff) Grounding {
 				Finding: f,
 				Reason:  fmt.Sprintf("file %q is not in the diff", f.File),
 			})
-		case f.Kind.wholeFile() || file.Covers(f.StartLine, f.EndLine):
+		case file.Covers(f.StartLine, f.EndLine):
 			g.Kept = append(g.Kept, f)
 		default:
 			g.Dropped = append(g.Dropped, Dropped{

@@ -71,8 +71,10 @@ type Result struct {
 //
 // It asks the model for a Review of the whole diff, or of each file on its own
 // (see Strategy), and merges the answers. Then it drops the findings that cite
-// lines the diff doesn't show (see Ground) and scores the rest. Before each
-// model call, Run stops with ctx's error if ctx is done.
+// lines the diff doesn't show (see Ground) and scores the rest. When each file
+// is reviewed on its own, a call's findings about any other file are dropped
+// too: the model never saw that file. Before each model call, Run stops with
+// ctx's error if ctx is done.
 func Run(ctx context.Context, llm LLM, in Input) (Result, error) {
 	emit := func(kind EventKind, format string, args ...any) {
 		if in.OnEvent != nil {
@@ -84,22 +86,25 @@ func Run(ctx context.Context, llm LLM, in Input) (Result, error) {
 		Assembly: in.Prompt.Assemble(in.Diff.Text),
 	}
 
-	type chunk struct{ label, diff string }
+	// A chunk is what one model call reviews: one file, or the whole diff
+	// when file is empty.
+	type chunk struct{ label, file, diff string }
 	var chunks []chunk
 	if res.Strategy == StrategyMapReduce {
 		emit(EventInfo, "Large diff → map-reduce over %d files", len(in.Diff.Files))
 		for _, f := range in.Diff.Files {
-			chunks = append(chunks, chunk{f.Path, f.Text})
+			chunks = append(chunks, chunk{f.Path, f.Path, f.Text})
 		}
 	} else {
 		emit(EventInfo, "Reviewing %d changed file(s) in one pass", len(in.Diff.Files))
-		chunks = []chunk{{"all files", in.Diff.Text}}
+		chunks = []chunk{{"all files", "", in.Diff.Text}}
 	}
 
 	m := model{llm: llm, name: in.Model, sessionID: in.SessionID, maxRetries: maxRetries}
 	var (
-		parts []Review
-		raws  []string
+		parts     []Review
+		raws      []string
+		offTarget []Dropped // findings about a file the call wasn't shown
 	)
 	for _, c := range chunks {
 		if err := ctx.Err(); err != nil {
@@ -116,6 +121,20 @@ func Run(ctx context.Context, llm LLM, in Input) (Result, error) {
 		}
 		emit(EventResult, "%s: %d candidate finding(s)", c.label, len(ans.Review.Findings))
 
+		if c.file != "" {
+			var own []Finding
+			for _, f := range ans.Review.Findings {
+				if f.File == c.file {
+					own = append(own, f)
+					continue
+				}
+				offTarget = append(offTarget, Dropped{
+					Finding: f,
+					Reason:  fmt.Sprintf("reported by the call for %q, which was not shown %q", c.file, f.File),
+				})
+			}
+			ans.Review.Findings = own
+		}
 		parts = append(parts, ans.Review)
 		raws = append(raws, ans.Raw)
 		res.Chunks = append(res.Chunks, c.label)
@@ -127,6 +146,7 @@ func Run(ctx context.Context, llm LLM, in Input) (Result, error) {
 	emit(EventResult, "Reduced to %d finding(s); verdict=%s", len(res.Review.Findings), res.Review.Verdict)
 
 	res.Grounding = Ground(res.Review.Findings, in.Diff)
+	res.Grounding.Dropped = append(offTarget, res.Grounding.Dropped...)
 	for _, d := range res.Grounding.Dropped {
 		emit(EventInfo, "grounding dropped %q: %s", d.Finding.Title, d.Reason)
 	}

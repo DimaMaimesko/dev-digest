@@ -85,7 +85,14 @@ which fixes these:
 The Go parser also returns an error for a malformed hunk header; the TS parser
 silently ignored it.
 
-**Grounding** (`grounding.ts`). The TS gate checked a finding's range by looping
+**Grounding** (`grounding.ts`, `review/run.ts`):
+
+| Case | TypeScript | Go |
+|---|---|---|
+| Model labels a finding `"kind": "hook"` (or `secret_leak`, `phantom`, `lethal_trifecta`) | **Skips the line check**: the finding only needs its file in the diff, so a made-up line passes | Line check for every kind. A kind is a label the model writes, not a permission. Scanners that read whole files (later lessons) will need their own check. |
+| Map-reduce: the call for file A reports a finding about file B | **Kept** if B's line is in the whole diff, though the model never saw B. Also repeats findings across calls. | Dropped, with the reporting call in the reason |
+
+The TS gate also checked a finding's range by looping
 over every line number in it until one was in the diff. A finding with a huge
 range that misses the diff (say lines 100 to 999,999,999) takes about 2 seconds
 per finding, measured. Go loops over the lines the diff shows instead, so the

@@ -154,6 +154,38 @@ func TestRunMapReduce(t *testing.T) {
 	}
 }
 
+// Each file's call only sees that file. A finding it reports about another
+// file is dropped, even on a line the whole diff shows: the model made it up.
+func TestRunMapReduceDropsFindingsAboutOtherFiles(t *testing.T) {
+	config := withSeverity(finding("src/config.ts", 11, 11), review.SeverityCritical)
+	users := finding("src/api/users.ts", 46, 46)
+	llm := &scriptedLLM{reply: always(answer(t, review.VerdictComment, "s", 50, config, users))}
+
+	res, err := review.Run(context.Background(), llm, review.Input{
+		Model: "m", Prompt: review.Prompt{System: "s"}, Diff: parse(t, sample), Strategy: review.StrategyMapReduce,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// Each finding is kept once, from the call for its own file.
+	if want := []review.Finding{config, users}; !slices.Equal(res.Review.Findings, want) {
+		t.Errorf("Findings = %+v, want each file's finding once", res.Review.Findings)
+	}
+	if got := res.Grounding.Summary(); got != "2/4 passed" {
+		t.Errorf("grounding = %q, want 2/4 passed", got)
+	}
+	wantReasons := []string{
+		`reported by the call for "src/config.ts", which was not shown "src/api/users.ts"`,
+		`reported by the call for "src/api/users.ts", which was not shown "src/config.ts"`,
+	}
+	for i, d := range res.Grounding.Dropped {
+		if d.Reason != wantReasons[i] {
+			t.Errorf("Dropped[%d].Reason = %q, want %q", i, d.Reason, wantReasons[i])
+		}
+	}
+}
+
 func TestRunMapReduceSkipsEmptySummaries(t *testing.T) {
 	llm := &scriptedLLM{reply: func(req review.JSONRequest) string {
 		if strings.Contains(userMessage(req), "src/api/users.ts") {

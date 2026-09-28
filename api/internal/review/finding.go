@@ -28,8 +28,12 @@ const (
 // an ordinary finding from a reviewer agent, tied to changed lines.
 type Kind string
 
-// Kinds of findings. All kinds except KindFinding come from scanners that read
-// whole files; later lessons add them.
+// Kinds of findings. Later lessons add scanners that report the kinds other
+// than KindFinding.
+//
+// A kind is a label, not a permission: a model can write any of them, so Ground
+// treats every kind the same. A scanner that reads whole files will need its
+// own file-level check, applied because the finding came from the scanner.
 const (
 	KindFinding        Kind = "finding"
 	KindSecretLeak     Kind = "secret_leak"
@@ -37,16 +41,6 @@ const (
 	KindPhantom        Kind = "phantom"
 	KindHook           Kind = "hook"
 )
-
-// wholeFile reports whether findings of kind k come from a scanner that reads
-// whole files rather than the diff.
-func (k Kind) wholeFile() bool {
-	switch k {
-	case KindSecretLeak, KindLethalTrifecta, KindPhantom, KindHook:
-		return true
-	}
-	return false
-}
 
 // Finding is one issue a reviewer reports about a range of lines in a file.
 // The JSON field names match the API contract the web client uses.
