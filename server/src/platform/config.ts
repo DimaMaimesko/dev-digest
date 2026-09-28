@@ -15,7 +15,7 @@ import { join, isAbsolute, resolve } from 'node:path';
 const EnvSchema = z.object({
   DATABASE_URL: z
     .string()
-    .default('postgres://devdigest:devdigest@localhost:5432/devdigest'),
+    .default('postgres://devdigest:devdigest@localhost:5433/devdigest'),
   // Memory/RAG embeddings run on OpenAI (text-embedding-3-small, 1536-dim — the
   // pgvector columns are locked to that). Default OFF so the app makes ZERO
   // OpenAI requests; set EMBEDDINGS_ENABLED=true to turn memory retrieval on.

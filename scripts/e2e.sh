@@ -22,9 +22,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# --- config (all overridable; defaults dodge the dev stack on 5432/3000/3001) ---
+# --- config (all overridable; defaults dodge the dev stack on 5433/3000/3001) ---
 PG_CONTAINER="${E2E_PG_CONTAINER:-devdigest-e2e-postgres}"
-PG_PORT="${E2E_PG_PORT:-5433}"
+PG_PORT="${E2E_PG_PORT:-5434}"
 PG_IMAGE="${E2E_PG_IMAGE:-pgvector/pgvector:pg16}"
 PG_DB="${E2E_PG_DB:-devdigest}"
 PG_USER="${E2E_PG_USER:-devdigest}"
@@ -33,7 +33,7 @@ API_PORT="${E2E_API_PORT:-3101}"
 WEB_PORT="${E2E_WEB_PORT:-3100}"
 
 # Exported BEFORE any tsx/next spawn. dotenv (used by migrate/seed/config) does
-# not override already-set env, so these win over server/.env's :5432 / :3001
+# not override already-set env, so these win over server/.env's :5433 / :3001
 # without touching the file. WEB_PORT must be exported too: the API derives its
 # CORS allow-origin (config.webOrigin) from it. 127.0.0.1 (not localhost) avoids
 # an IPv6 ::1 vs published-IPv4 mismatch against the container.
