@@ -11,8 +11,8 @@ yet; the TypeScript server is still the one that runs.
 
 | Package | What it does | Ported from |
 |---|---|---|
-| `internal/diff` | Parses `git diff` output; answers "does this file's diff show lines N–M?" | `server/src/adapters/git/diff-parser.ts` |
-| `internal/review` | Review domain: `Finding` and `Review`; `Ground`, the gate that drops findings citing lines outside the diff; `Prompt.Assemble`, which builds the model's messages; the `LLM` interface, and asking a model for a `Review` with a retry when its answer is invalid | `reviewer-core/src/grounding.ts`, `prompt.ts`, `llm/structured.ts`, the retry loop from the three LLM providers, and contracts from `shared/` |
+| `internal/diff` | Parses `git diff` output into files, each with its own section of the text; answers "does this file's diff show lines N–M?" | `server/src/adapters/git/diff-parser.ts`, `sliceDiff` from `reviewer-core/src/review/reduce.ts` |
+| `internal/review` | Review domain: `Finding` and `Review`; `Ground`, the gate that drops findings citing lines outside the diff; `Prompt.Assemble`, which builds the model's messages; the `LLM` interface, and asking a model for a `Review` with a retry when its answer is invalid; `Run`, the whole review: one call or one per file, merge, ground, score | `reviewer-core/src/grounding.ts`, `prompt.ts`, `llm/structured.ts`, `review/run.ts`, `review/reduce.ts`, the retry loop from the three LLM providers, and contracts from `shared/` |
 
 **Where the retry loop lives.** In the TS code, each of the three LLM providers
 (OpenAI, Anthropic, OpenRouter) has its own copy of the loop that re-asks the
@@ -78,6 +78,18 @@ affect unusual input:
 | JSON schema sent with every call | 8.9 KB: includes an unused copy of the whole schema, added by the Zod converter | 4.1 KB: the same schema without the copy (checked to be semantically equal) |
 | Fenced answer with a code block inside a string value | Cut at the inner ```` ``` ````, so parsing fails and a retry is spent | Parsed. A JSON decoder reads from the first `{` and understands strings. |
 | A required string field is missing | Rejected by Zod | Decodes as `""`. Grounding drops a finding with no `file`. Enums, ranges and types are checked as before. |
+
+**Review run** (`review/run.ts`, `review/reduce.ts`):
+
+| Case | TypeScript | Go |
+|---|---|---|
+| Map-reduce with files `x.ts` and `x.ts.bak` | `sliceDiff` finds a file's section by substring, so the `x.ts` call also gets `x.ts.bak`, which is reviewed twice | The parser records each file's own section (`diff.File.Text`) |
+| Cancelling a run | The caller passes a `checkCancelled` callback that throws | `ctx`, checked before each model call and passed to the provider |
+| Score of merged file reviews | Averaged, then overwritten by the score from the grounded findings | Not computed; only the final score exists |
+
+File calls in map-reduce mode still run one after another, as in TS. Running
+them concurrently is easy in Go, but it would change how many requests hit the
+provider at once, so it waits for a real need.
 
 Not ported yet: the lethal-trifecta fields (`trifecta_components`,
 `evidence`) stay in the schema, so the model's answer has the same shape, but

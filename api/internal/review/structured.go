@@ -49,25 +49,35 @@ type answer struct {
 	TokensOut int
 }
 
-// askForReview sends the assembled prompt to llm and reads the answer as a
-// Review. When the answer isn't a valid Review, it shows the model what was
-// wrong and asks again, up to maxRetries more times.
-func askForReview(ctx context.Context, llm LLM, model string, a Assembly, maxRetries int) (answer, error) {
+// model is a model to ask for reviews, with the settings every call of one
+// review run shares.
+type model struct {
+	llm        LLM
+	name       string
+	sessionID  string // groups the run's calls in the OpenRouter dashboard
+	maxRetries int    // extra attempts after an invalid answer
+}
+
+// askForReview sends the assembled prompt to the model and reads the answer
+// as a Review. When the answer isn't a valid Review, it shows the model what
+// was wrong and asks again, up to m.maxRetries more times.
+func (m model) askForReview(ctx context.Context, a Assembly) (answer, error) {
 	req := JSONRequest{
-		Model:      model,
+		Model:      m.name,
 		System:     a.System,
 		Messages:   []Message{{Role: RoleUser, Content: a.User}},
 		SchemaName: "Review",
 		Schema:     reviewSchema,
+		SessionID:  m.sessionID,
 	}
 	var (
 		tokensIn, tokensOut int
 		problem             error
 	)
-	for attempt := 1; attempt <= maxRetries+1; attempt++ {
-		res, err := llm.CompleteJSON(ctx, req)
+	for attempt := 1; attempt <= m.maxRetries+1; attempt++ {
+		res, err := m.llm.CompleteJSON(ctx, req)
 		if err != nil {
-			return answer{}, fmt.Errorf("ask %s for a review: %w", model, err)
+			return answer{}, fmt.Errorf("ask %s for a review: %w", m.name, err)
 		}
 		tokensIn += res.TokensIn
 		tokensOut += res.TokensOut
@@ -89,7 +99,7 @@ func askForReview(ctx context.Context, llm LLM, model string, a Assembly, maxRet
 		)
 	}
 	return answer{}, fmt.Errorf("%w from %s in %d attempts; last problem: %v",
-		ErrInvalidReview, model, maxRetries+1, problem)
+		ErrInvalidReview, m.name, m.maxRetries+1, problem)
 }
 
 // repairRequest tells the model what was wrong with its answer.

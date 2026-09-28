@@ -11,12 +11,14 @@ import (
 
 // Diff is a parsed unified diff.
 type Diff struct {
+	Text  string // the whole diff, as given to Parse
 	Files []File
 }
 
 // File is one changed file in a diff.
 type File struct {
 	Path      string // path in the new version, without the "b/" prefix
+	Text      string // this file's section of the diff, from its "diff --git" line
 	Additions int
 	Deletions int
 	Hunks     []Hunk
@@ -89,16 +91,20 @@ func Parse(raw string) (Diff, error) {
 		if err := p.line(line); err != nil {
 			return Diff{}, fmt.Errorf("line %d: %w", i+1, err)
 		}
+		if p.file != nil {
+			p.text = append(p.text, line)
+		}
 	}
 	p.endFile()
-	return Diff{Files: p.files}, nil
+	return Diff{Text: raw, Files: p.files}, nil
 }
 
 // parser holds the state of Parse between lines.
 type parser struct {
 	files []File
-	file  *File // the file being read; nil before the first file header
-	hunk  *Hunk // the hunk being read; nil outside a hunk body
+	file  *File    // the file being read; nil before the first file header
+	text  []string // the lines of the file being read, so far
+	hunk  *Hunk    // the hunk being read; nil outside a hunk body
 
 	oldLeft, newLeft int // body lines the current hunk has yet to show
 	next             int // new-file number of the next added or context line
@@ -212,7 +218,8 @@ func (p *parser) endHunk() {
 func (p *parser) endFile() {
 	p.endHunk()
 	if p.file != nil && p.file.Path != "" {
+		p.file.Text = strings.Join(p.text, "\n")
 		p.files = append(p.files, *p.file)
 	}
-	p.file = nil
+	p.file, p.text = nil, nil
 }

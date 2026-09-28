@@ -123,12 +123,12 @@ func TestParseReviewRejects(t *testing.T) {
 }
 
 func TestAskForReview(t *testing.T) {
-	prompt := Prompt{System: "You are a reviewer.", Diff: "D"}.Assemble()
+	prompt := Prompt{System: "You are a reviewer."}.Assemble("D")
 
 	t.Run("valid first answer", func(t *testing.T) {
 		llm := &fakeLLM{answers: []string{validReview}}
 
-		ans, err := askForReview(context.Background(), llm, "gpt-test", prompt, 2)
+		ans, err := model{llm: llm, name: "gpt-test", maxRetries: 2}.askForReview(context.Background(), prompt)
 		if err != nil {
 			t.Fatalf("askForReview: %v", err)
 		}
@@ -156,7 +156,7 @@ func TestAskForReview(t *testing.T) {
 		bad := strings.Replace(validReview, `"CRITICAL"`, `"HIGH"`, 1)
 		llm := &fakeLLM{answers: []string{bad, validReview}}
 
-		ans, err := askForReview(context.Background(), llm, "m", prompt, 2)
+		ans, err := model{llm: llm, name: "m", maxRetries: 2}.askForReview(context.Background(), prompt)
 		if err != nil {
 			t.Fatalf("askForReview: %v", err)
 		}
@@ -177,7 +177,7 @@ func TestAskForReview(t *testing.T) {
 	t.Run("never valid", func(t *testing.T) {
 		llm := &fakeLLM{answers: []string{"no", "still no", "nope"}}
 
-		_, err := askForReview(context.Background(), llm, "m", prompt, 2)
+		_, err := model{llm: llm, name: "m", maxRetries: 2}.askForReview(context.Background(), prompt)
 		if !errors.Is(err, ErrInvalidReview) {
 			t.Fatalf("err = %v, want ErrInvalidReview", err)
 		}
@@ -190,7 +190,7 @@ func TestAskForReview(t *testing.T) {
 		boom := errors.New("rate limited")
 		llm := &fakeLLM{err: boom}
 
-		_, err := askForReview(context.Background(), llm, "m", prompt, 2)
+		_, err := model{llm: llm, name: "m", maxRetries: 2}.askForReview(context.Background(), prompt)
 		if !errors.Is(err, boom) {
 			t.Fatalf("err = %v, want it to wrap %v", err, boom)
 		}

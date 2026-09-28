@@ -21,6 +21,7 @@ type JSONRequest struct {
 	Messages   []Message       // the conversation after the system prompt, oldest first
 	SchemaName string          // names the schema for the provider, e.g. "Review"
 	Schema     json.RawMessage // a JSON Schema, draft-07
+	SessionID  string          // optional; OpenRouter groups calls with the same ID
 }
 
 // Role says who wrote a message.

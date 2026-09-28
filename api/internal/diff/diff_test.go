@@ -154,6 +154,31 @@ func TestParseEdgeCases(t *testing.T) {
 	}
 }
 
+func TestParseText(t *testing.T) {
+	const x = "diff --git a/x.ts b/x.ts\n--- a/x.ts\n+++ b/x.ts\n@@ -1 +1 @@\n-a\n+b"
+	// reviewer-core's sliceDiff matched "b/x.ts" as a substring, so this
+	// file's lines ended up in the section for x.ts as well.
+	const bak = "diff --git a/x.ts.bak b/x.ts.bak\n--- a/x.ts.bak\n+++ b/x.ts.bak\n@@ -1 +1 @@\n-old\n+new"
+	raw := x + "\n" + bak
+
+	d, err := diff.Parse(raw)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if d.Text != raw {
+		t.Errorf("Diff.Text is not the input")
+	}
+	if len(d.Files) != 2 {
+		t.Fatalf("got %d files, want 2", len(d.Files))
+	}
+	if d.Files[0].Text != x {
+		t.Errorf("x.ts Text = %q, want %q", d.Files[0].Text, x)
+	}
+	if d.Files[1].Text != bak {
+		t.Errorf("x.ts.bak Text = %q, want %q", d.Files[1].Text, bak)
+	}
+}
+
 func TestParseErrors(t *testing.T) {
 	tests := []struct {
 		name string
