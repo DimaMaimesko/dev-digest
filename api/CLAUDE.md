@@ -55,7 +55,7 @@ Other rules:
 api/
   cmd/            one directory per binary (added as needed)
   internal/diff   parse unified diffs; which new-file lines a hunk shows
-  internal/review domain: findings, grounding, prompt (later: structured output)
+  internal/review domain: findings, grounding, prompt, LLM interface + structured output
 ```
 
 ## Commands
@@ -69,7 +69,7 @@ Run from `api/`:
 
 The migration plan has 6 phases. Update this list as phases finish.
 
-1. **In progress:** port `reviewer-core` into `internal/review` (grounding ✅, prompt ✅, structured output, CLI)
+1. **In progress:** port `reviewer-core` into `internal/review` (grounding ✅, prompt ✅, structured output ✅, review run, CLI)
 2. API skeleton and read endpoints
 3. Write paths: agents, settings, add repo, PR import
 4. Reviews: run executor, background runs, SSE

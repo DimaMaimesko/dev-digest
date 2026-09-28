@@ -12,7 +12,12 @@ yet; the TypeScript server is still the one that runs.
 | Package | What it does | Ported from |
 |---|---|---|
 | `internal/diff` | Parses `git diff` output; answers "does this file's diff show lines N–M?" | `server/src/adapters/git/diff-parser.ts` |
-| `internal/review` | Review domain: `Finding`; `Ground`, the gate that drops findings citing lines outside the diff; `Prompt.Assemble`, which builds the model's system and user messages | `reviewer-core/src/grounding.ts`, `reviewer-core/src/prompt.ts`, `Finding` and `PromptAssembly` from `shared/contracts/` |
+| `internal/review` | Review domain: `Finding` and `Review`; `Ground`, the gate that drops findings citing lines outside the diff; `Prompt.Assemble`, which builds the model's messages; the `LLM` interface, and asking a model for a `Review` with a retry when its answer is invalid | `reviewer-core/src/grounding.ts`, `prompt.ts`, `llm/structured.ts`, the retry loop from the three LLM providers, and contracts from `shared/` |
+
+**Where the retry loop lives.** In the TS code, each of the three LLM providers
+(OpenAI, Anthropic, OpenRouter) has its own copy of the loop that re-asks the
+model when its JSON is invalid. In Go, the `LLM` interface makes one call per
+request, and `review` owns the loop, once. Provider adapters stay thin.
 
 The prompt must stay byte-for-byte what the TS engine sends. The files in
 `internal/review/testdata/*.golden` were produced by running `assemblePrompt`
@@ -65,3 +70,16 @@ affect unusual input:
 | Untrusted text containing `</UNTRUSTED>`, `</Untrusted>`, `</untrusted >` or `</ untrusted>` | **Passes through unescaped.** A model can read it as the end of the untrusted block, so text after it looks like instructions. Only the exact `</untrusted>` was escaped. | Escaped in any letter case and spacing |
 | PR description with an emoji at the 4000-character limit | Cuts the emoji in half, leaving invalid text | Cuts between characters |
 | Callers or repo map made only of whitespace | Left out of the prompt, but still recorded in the run trace | Left out of both |
+
+**Structured output** (`llm/structured.ts`):
+
+| Case | TypeScript | Go |
+|---|---|---|
+| JSON schema sent with every call | 8.9 KB: includes an unused copy of the whole schema, added by the Zod converter | 4.1 KB: the same schema without the copy (checked to be semantically equal) |
+| Fenced answer with a code block inside a string value | Cut at the inner ```` ``` ````, so parsing fails and a retry is spent | Parsed. A JSON decoder reads from the first `{` and understands strings. |
+| A required string field is missing | Rejected by Zod | Decodes as `""`. Grounding drops a finding with no `file`. Enums, ranges and types are checked as before. |
+
+Not ported yet: the lethal-trifecta fields (`trifecta_components`,
+`evidence`) stay in the schema, so the model's answer has the same shape, but
+Go ignores them until the lesson that uses them. Run cost isn't tracked,
+matching commit `d45ab0d`, which removed it from the product.
