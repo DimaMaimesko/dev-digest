@@ -12,7 +12,12 @@ yet; the TypeScript server is still the one that runs.
 | Package | What it does | Ported from |
 |---|---|---|
 | `internal/diff` | Parses `git diff` output; answers "does this file's diff show lines N–M?" | `server/src/adapters/git/diff-parser.ts` |
-| `internal/review` | Review domain: `Finding`, and `Ground`, the gate that drops findings citing lines outside the diff | `reviewer-core/src/grounding.ts`, `Finding` from `shared/contracts/findings.ts` |
+| `internal/review` | Review domain: `Finding`; `Ground`, the gate that drops findings citing lines outside the diff; `Prompt.Assemble`, which builds the model's system and user messages | `reviewer-core/src/grounding.ts`, `reviewer-core/src/prompt.ts`, `Finding` and `PromptAssembly` from `shared/contracts/` |
+
+The prompt must stay byte-for-byte what the TS engine sends. The files in
+`internal/review/testdata/*.golden` were produced by running `assemblePrompt`
+from `reviewer-core` on the same input as the Go test. Once the TS server is
+removed, they become plain regression fixtures.
 
 `review` depends on `diff`, and neither imports anything outside the standard
 library.
@@ -51,3 +56,12 @@ over every line number in it until one was in the diff. A finding with a huge
 range that misses the diff (say lines 100 to 999,999,999) takes about 2 seconds
 per finding, measured. Go loops over the lines the diff shows instead, so the
 cost doesn't depend on the range.
+
+**Prompt** (`prompt.ts`). The prompt text is unchanged; these fixes only
+affect unusual input:
+
+| Input | TypeScript | Go |
+|---|---|---|
+| Untrusted text containing `</UNTRUSTED>`, `</Untrusted>`, `</untrusted >` or `</ untrusted>` | **Passes through unescaped.** A model can read it as the end of the untrusted block, so text after it looks like instructions. Only the exact `</untrusted>` was escaped. | Escaped in any letter case and spacing |
+| PR description with an emoji at the 4000-character limit | Cuts the emoji in half, leaving invalid text | Cuts between characters |
+| Callers or repo map made only of whitespace | Left out of the prompt, but still recorded in the run trace | Left out of both |
