@@ -53,9 +53,10 @@ Other rules:
 
 ```
 api/
-  cmd/            one directory per binary (added as needed)
+  cmd/review      command-line review of a diff
   internal/diff   parse unified diffs; which new-file lines a hunk shows
   internal/review domain: findings, grounding, prompt, LLM interface, structured output, Run
+  internal/openai adapter: OpenAI-compatible chat completions (OpenAI, OpenRouter, Ollama)
 ```
 
 ## Commands
@@ -69,8 +70,8 @@ Run from `api/`:
 
 The migration plan has 6 phases. Update this list as phases finish.
 
-1. **In progress:** port `reviewer-core` into `internal/review` (grounding ✅, prompt ✅, structured output ✅, review run ✅, CLI)
-2. API skeleton and read endpoints
+1. ✅ Port `reviewer-core` into `internal/review`, with an OpenAI-compatible adapter and the `cmd/review` CLI
+2. **Next:** API skeleton and read endpoints
 3. Write paths: agents, settings, add repo, PR import
 4. Reviews: run executor, background runs, SSE
 5. repo-intel (tree-sitter)

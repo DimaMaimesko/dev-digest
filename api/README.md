@@ -4,8 +4,33 @@ A Go rewrite of [`server/`](../server/README.md) and
 [`reviewer-core/`](../reviewer-core/README.md), built to serve the existing
 Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
-**Status:** phase 1 of 6, porting the review engine. Nothing here serves HTTP
-yet; the TypeScript server is still the one that runs.
+**Status:** phase 1 of 6 is done: the review engine runs from the command
+line. Nothing here serves HTTP yet; the TypeScript server is still the one the
+web app uses.
+
+## Review a diff from the command line
+
+```sh
+cd api
+export OPENROUTER_API_KEY=sk-or-...
+git diff main | go run ./cmd/review \
+    -model deepseek/deepseek-v4-flash \
+    -prompt ../docs/agent-prompts/general-reviewer.md
+```
+
+Progress goes to standard error and the review to standard output. Useful flags:
+
+| Flag | Meaning |
+|---|---|
+| `-provider openai` | Call OpenAI instead, with `OPENAI_API_KEY` |
+| `-base-url URL` | Call any OpenAI-compatible API, such as Ollama at `http://localhost:11434/v1` |
+| `-strategy` | `auto` (default), `single-pass` or `map-reduce` |
+| `-task "Review PR #482"` | A line framing the review |
+| `-diff FILE` | Read the diff from a file instead of standard input |
+| `-json` | Print the result as JSON |
+| `-quiet` | Don't print progress |
+
+Run `go run ./cmd/review -h` for the full list.
 
 ## Packages
 
@@ -24,8 +49,12 @@ The prompt must stay byte-for-byte what the TS engine sends. The files in
 from `reviewer-core` on the same input as the Go test. Once the TS server is
 removed, they become plain regression fixtures.
 
-`review` depends on `diff`, and neither imports anything outside the standard
-library.
+| `internal/openai` | Client for OpenAI-compatible chat completions APIs (OpenAI, OpenRouter, Ollama, vLLM), written with `net/http`. Implements `review.LLM`. | `reviewer-core/src/llm/openrouter.ts`, `completeStructured` in `server/src/adapters/llm/openai.ts` |
+| `cmd/review` | The command above | — |
+
+Dependencies point inward: `cmd/review` wires `openai` into `review`; `openai`
+imports `review` for the types of the `LLM` interface; `review` imports only
+`diff`. Nothing imports anything outside the standard library.
 
 ## Commands
 
