@@ -1,0 +1,42 @@
+# api suite — the Go rewrite of the backend (api/).
+# gofmt, go vet, staticcheck and the race-enabled tests; hermetic, no Docker.
+name: api
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - '.github/workflows/api.yml'
+  pull_request:
+    paths:
+      - 'api/**'
+      - '.github/workflows/api.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: go checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+          # No dependencies yet, so no go.sum to key a cache on. Turn caching
+          # on (cache-dependency-path: api/go.sum) with the first dependency.
+          cache: false
+
+      - run: go install honnef.co/go/tools/cmd/staticcheck@2026.1
+
+      - run: make check
