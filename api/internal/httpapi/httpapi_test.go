@@ -32,6 +32,7 @@ type fixture struct {
 	user        uuid.UUID
 	secretsFile string // doesn't exist until a test writes it
 	env         map[string]string
+	githubAPI   string // empty: no syncing from GitHub
 }
 
 const cloneDir = "/work/clones"
@@ -75,6 +76,7 @@ func (f fixture) serve(req *http.Request) *http.Response {
 		CloneDir:  cloneDir,
 		Secrets:   secrets.New(f.secretsFile, func(k string) string { return f.env[k] }),
 		Log:       quiet,
+		GitHubAPI: f.githubAPI,
 	}).Handler().ServeHTTP(rec, req)
 	return rec.Result()
 }

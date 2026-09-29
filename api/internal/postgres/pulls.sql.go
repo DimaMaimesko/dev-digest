@@ -196,19 +196,3 @@ func (q *Queries) ListPulls(ctx context.Context, repoID uuid.UUID) ([]ListPullsR
 	}
 	return items, nil
 }
-
-const repoExists = `-- name: RepoExists :one
-SELECT EXISTS (SELECT 1 FROM repos WHERE workspace_id = $1 AND id = $2)
-`
-
-type RepoExistsParams struct {
-	WorkspaceID uuid.UUID
-	ID          uuid.UUID
-}
-
-func (q *Queries) RepoExists(ctx context.Context, arg RepoExistsParams) (bool, error) {
-	row := q.db.QueryRow(ctx, repoExists, arg.WorkspaceID, arg.ID)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
-}

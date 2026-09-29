@@ -7,12 +7,15 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/DimaMaimesko/dev-digest/api/internal/github"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/pulls"
+	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
-// Until phase 3 adds a GitHub client, these handlers serve pull requests from
-// the database. The TS server does the same when it has no GitHub token; with
-// one, it first syncs from GitHub.
+// With a GitHub token, reading pull requests first syncs them from GitHub.
+// When GitHub can't be reached, the saved pull requests are served, so they
+// stay readable offline, as in TS.
 
 // pullJSON is the part of a pull request that the list and the detail share
 // (PrMeta in server/src/vendor/shared/contracts/platform.ts).
@@ -63,30 +66,40 @@ type commitJSON struct {
 }
 
 // listPulls answers GET /repos/{id}/pulls: the repository's pull requests,
-// each with where it stands for review and its latest review's score.
+// each with where it stands for review and its latest review's score. With a
+// GitHub token, it first saves GitHub's list and the diff stats of up to 10
+// pull requests that have none.
 func (s *Server) listPulls(w http.ResponseWriter, r *http.Request) {
 	repoID, ok := pathID(w, r)
 	if !ok {
 		return
 	}
-	exists, err := s.queries.RepoExists(r.Context(), postgres.RepoExistsParams{WorkspaceID: s.workspace, ID: repoID})
+	repo, err := s.queries.GetRepo(r.Context(), postgres.GetRepoParams{WorkspaceID: s.workspace, ID: repoID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "not_found", "Repo not found")
+		return
+	}
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	if !exists {
-		writeError(w, http.StatusNotFound, "not_found", "Repo not found")
-		return
+	if gh := s.githubForRead(r); gh != nil {
+		if _, err := s.pulls.SyncList(r.Context(), gh, repo); err != nil {
+			s.log.Warn("GitHub sync skipped; serving saved pull requests", "repo", repo.FullName, "err", err)
+		}
+		if err := s.pulls.BackfillStats(r.Context(), gh, repo); err != nil {
+			s.log.Warn("diff stats not fetched", "repo", repo.FullName, "err", err)
+		}
 	}
 
-	pulls, err := s.queries.ListPulls(r.Context(), repoID)
+	saved, err := s.queries.ListPulls(r.Context(), repo.ID)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
 	now := time.Now()
-	out := make([]pullListItemJSON, 0, len(pulls))
-	for _, p := range pulls {
+	out := make([]pullListItemJSON, 0, len(saved))
+	for _, p := range saved {
 		out = append(out, pullListItemJSON{
 			pullJSON: pullJSON{
 				ID:         p.ID.String(),
@@ -110,7 +123,8 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request) {
 }
 
 // getPull answers GET /pulls/{id}: one pull request with its description,
-// changed files and commits.
+// changed files and commits. With a GitHub token they are fetched again and
+// saved first; the answer always comes from the database.
 func (s *Server) getPull(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -124,6 +138,23 @@ func (s *Server) getPull(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.internalError(w, r, err)
 		return
+	}
+	repo, err := s.queries.GetRepo(r.Context(), postgres.GetRepoParams{WorkspaceID: s.workspace, ID: p.RepoID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "not_found", "Repo not found")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if gh := s.githubForRead(r); gh != nil {
+		if err := s.pulls.Refresh(r.Context(), gh, repo, p.Number); err != nil {
+			s.log.Warn("GitHub refresh skipped; serving the saved pull request", "repo", repo.FullName, "number", p.Number, "err", err)
+		} else if p, err = s.queries.GetPull(r.Context(), postgres.GetPullParams{WorkspaceID: s.workspace, ID: id}); err != nil {
+			s.internalError(w, r, err)
+			return
+		}
 	}
 	files, err := s.queries.ListPullFiles(r.Context(), p.ID)
 	if err != nil {
@@ -165,6 +196,83 @@ func (s *Server) getPull(w http.ResponseWriter, r *http.Request) {
 		out.Commits = append(out.Commits, commitJSON{SHA: c.Sha, Message: c.Message, Author: c.Author, CommittedAt: jsTimePtr(c.CommittedAt)})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// pollRepo answers POST /repos/{id}/poll: it saves GitHub's list of the
+// repository's pull requests, like reading the list does, but fails when
+// GitHub can't be reached. It never starts a review.
+func (s *Server) pollRepo(w http.ResponseWriter, r *http.Request) {
+	repoID, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	repo, err := s.queries.GetRepo(r.Context(), postgres.GetRepoParams{WorkspaceID: s.workspace, ID: repoID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "not_found", "Repo not found")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	gh, err := s.github()
+	if errors.Is(err, errNoGitHubToken) {
+		writeError(w, http.StatusInternalServerError, "config_error", "GITHUB_TOKEN is not configured")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	synced, err := s.pulls.SyncList(r.Context(), gh, repo)
+	var ghErr *pulls.GitHubError
+	if errors.As(err, &ghErr) {
+		writeError(w, http.StatusBadGateway, "github_error", ghErr.Error())
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if err := s.queries.MarkRepoPolled(r.Context(), repo.ID); err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Synced          int  `json:"synced"`
+		ReviewTriggered bool `json:"reviewTriggered"` // always false: reviews start only by hand
+	}{Synced: synced})
+}
+
+// errNoGitHubToken means no GitHub token is set, or GitHub is turned off.
+var errNoGitHubToken = errors.New("no GitHub token")
+
+// github returns a GitHub client with the saved token.
+func (s *Server) github() (*github.Client, error) {
+	if s.githubAPI == "" {
+		return nil, errNoGitHubToken
+	}
+	token, err := s.secrets.Get(secrets.GitHubToken)
+	if err != nil {
+		return nil, err
+	}
+	if token == "" {
+		return nil, errNoGitHubToken
+	}
+	return github.New(s.githubAPI, token), nil
+}
+
+// githubForRead returns a GitHub client for syncing before a read, or nil
+// when there is no token. A read never fails for want of GitHub.
+func (s *Server) githubForRead(r *http.Request) *github.Client {
+	gh, err := s.github()
+	if err != nil {
+		if !errors.Is(err, errNoGitHubToken) {
+			s.log.Warn("GitHub token unreadable; serving saved pull requests", "path", r.URL.Path, "err", err)
+		}
+		return nil
+	}
+	return gh
 }
 
 // staleAfter is how long a reviewed pull request can go without changes

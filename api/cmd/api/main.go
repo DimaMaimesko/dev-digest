@@ -38,6 +38,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/DimaMaimesko/dev-digest/api/internal/github"
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
@@ -100,6 +101,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			Secrets:   secrets.New(cfg.secretsPath, getenv),
 			Log:       log,
 			Fallback:  cfg.tsAPI,
+			GitHubAPI: github.DefaultURL,
 		}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

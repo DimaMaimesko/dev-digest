@@ -11,6 +11,33 @@ import (
 	"github.com/google/uuid"
 )
 
+const getRepo = `-- name: GetRepo :one
+SELECT id, workspace_id, owner, name, full_name, default_branch, clone_path, last_polled_at, created_by, created_at FROM repos WHERE workspace_id = $1 AND id = $2
+`
+
+type GetRepoParams struct {
+	WorkspaceID uuid.UUID
+	ID          uuid.UUID
+}
+
+func (q *Queries) GetRepo(ctx context.Context, arg GetRepoParams) (Repo, error) {
+	row := q.db.QueryRow(ctx, getRepo, arg.WorkspaceID, arg.ID)
+	var i Repo
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Owner,
+		&i.Name,
+		&i.FullName,
+		&i.DefaultBranch,
+		&i.ClonePath,
+		&i.LastPolledAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listRepos = `-- name: ListRepos :many
 SELECT id, workspace_id, owner, name, full_name, default_branch, clone_path, last_polled_at, created_by, created_at FROM repos WHERE workspace_id = $1 ORDER BY created_at, id
 `
@@ -45,4 +72,13 @@ func (q *Queries) ListRepos(ctx context.Context, workspaceID uuid.UUID) ([]Repo,
 		return nil, err
 	}
 	return items, nil
+}
+
+const markRepoPolled = `-- name: MarkRepoPolled :exec
+UPDATE repos SET last_polled_at = now() WHERE id = $1
+`
+
+func (q *Queries) MarkRepoPolled(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markRepoPolled, id)
+	return err
 }

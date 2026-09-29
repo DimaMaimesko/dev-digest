@@ -1,6 +1,3 @@
--- name: RepoExists :one
-SELECT EXISTS (SELECT 1 FROM repos WHERE workspace_id = $1 AND id = $2);
-
 -- name: ListPulls :many
 -- A repository's pull requests, each with the score of its latest review
 -- (NULL when never reviewed), newest first. The web app sorts the list itself.

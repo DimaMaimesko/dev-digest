@@ -65,6 +65,8 @@ api/
   internal/pgtest   throwaway migrated Postgres for tests
   internal/secrets  API keys: ~/.devdigest/secrets.json, then the environment
   internal/agents   creating and changing agents, with their version history
+  internal/github   client for GitHub's REST API (net/http)
+  internal/pulls    saving pull requests from GitHub
   internal/diff     parse unified diffs; which new-file lines a hunk shows
   internal/review   domain: findings, grounding, prompt, LLM interface, structured output, Run
   internal/openai   adapter: OpenAI-compatible chat completions (OpenAI, OpenRouter, Ollama)
@@ -85,7 +87,7 @@ The migration plan has 6 phases. Update this list as phases finish.
 
 1. ✅ Port `reviewer-core` into `internal/review`, with an OpenAI-compatible adapter and the `cmd/review` CLI
 2. ✅ API skeleton and the database-backed read endpoints (18 of 22 `GET` routes; the other 4 need GitHub, the LLM adapters or the run bus). Add each new route to the walk in `parity_test.go`.
-3. **In progress:** write paths. ✅ Fallback proxy (`TS_API_URL`): unported routes are forwarded to the TS server, so the web app can run on the Go server. ✅ `PUT /settings`. ✅ Agent writes (`internal/agents`). ✅ Accept and dismiss findings, delete reviews and runs. Next: add repo, PR import, GitHub sync and comments (needs a GitHub client and the job runner). `POST /settings/test-connection` waits for phase 4 (see "Order the moves by shared state").
+3. **In progress:** write paths. ✅ Fallback proxy (`TS_API_URL`): unported routes are forwarded to the TS server, so the web app can run on the Go server. ✅ `PUT /settings`. ✅ Agent writes (`internal/agents`). ✅ Accept and dismiss findings, delete reviews and runs. ✅ GitHub sync on pull request reads, `POST /repos/{id}/poll` (`internal/github`, `internal/pulls`). Next: PR comments, then the model lists. `POST /settings/test-connection` waits for phase 4 (see "Order the moves by shared state").
 4. Reviews: run executor, background runs, SSE
 5. repo-intel (tree-sitter)
 6. Remove the TS server; migrations and CI move to Go

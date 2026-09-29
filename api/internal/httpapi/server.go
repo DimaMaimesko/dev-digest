@@ -20,6 +20,7 @@ import (
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/agents"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/pulls"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
@@ -35,6 +36,8 @@ type Server struct {
 	secrets   *secrets.Store
 	fallback  *url.URL
 	agents    *agents.Store
+	pulls     *pulls.Store
+	githubAPI string
 }
 
 // Config is what a Server needs.
@@ -53,6 +56,9 @@ type Config struct {
 	// "http://localhost:3001". Requests the Go server doesn't handle yet go
 	// there instead of getting a 404.
 	Fallback *url.URL
+	// GitHubAPI is GitHub's API base URL, such as github.DefaultURL. When it
+	// is empty, pull requests are never synced from GitHub.
+	GitHubAPI string
 }
 
 // New returns a Server.
@@ -68,6 +74,8 @@ func New(cfg Config) *Server {
 		secrets:   cfg.Secrets,
 		fallback:  cfg.Fallback,
 		agents:    agents.NewStore(cfg.DB),
+		pulls:     pulls.NewStore(cfg.DB),
+		githubAPI: cfg.GitHubAPI,
 	}
 }
 
@@ -79,6 +87,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /health/ready", s.ready)
 	mux.HandleFunc("GET /repos", s.listRepos)
 	mux.HandleFunc("GET /repos/{id}/pulls", s.listPulls)
+	mux.HandleFunc("POST /repos/{id}/poll", s.pollRepo)
 	mux.HandleFunc("GET /pulls/{id}", s.getPull)
 	mux.HandleFunc("GET /agents", s.listAgents)
 	mux.HandleFunc("GET /agents/{id}", s.getAgent)
