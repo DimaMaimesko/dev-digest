@@ -3,7 +3,8 @@
 # Postgres with testcontainers, using the runner's Docker.
 #
 # server/src/db/migrations/** is in the path filter because the tests and sqlc
-# read the schema from the TS server's migrations.
+# read the schema from the TS server's migrations; docs/agent-prompts/**
+# because a test keeps the seed's embedded prompts equal to them.
 name: api
 
 on:
@@ -12,11 +13,13 @@ on:
     paths:
       - 'api/**'
       - 'server/src/db/migrations/**'
+      - 'docs/agent-prompts/**'
       - '.github/workflows/api.yml'
   pull_request:
     paths:
       - 'api/**'
       - 'server/src/db/migrations/**'
+      - 'docs/agent-prompts/**'
       - '.github/workflows/api.yml'
 
 permissions:
