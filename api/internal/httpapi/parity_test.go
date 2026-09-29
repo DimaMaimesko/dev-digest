@@ -3,12 +3,16 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -18,6 +22,7 @@ import (
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
 // TestParityWithTypeScript compares the Go handler with a running TS server,
@@ -54,7 +59,24 @@ func TestParityWithTypeScript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("find the default workspace: %v", err)
 	}
-	goAPI := httptest.NewServer(httpapi.New(db, workspace, webOrigin, quiet).Handler())
+	// Give the Go handler the settings the TS process has: its environment
+	// plus server/.env, with relative paths resolved against server/.
+	getenv := tsEnv(t)
+	cloneDir := filepath.Join(serverDir(), "clones")
+	if v := getenv("DEVDIGEST_CLONE_DIR"); filepath.IsAbs(v) {
+		cloneDir = v
+	} else if v != "" {
+		cloneDir = filepath.Join(serverDir(), v)
+	}
+	home, _ := os.UserHomeDir()
+	goAPI := httptest.NewServer(httpapi.New(httpapi.Config{
+		DB:        db,
+		Workspace: workspace,
+		WebOrigin: webOrigin,
+		CloneDir:  cloneDir,
+		Secrets:   secrets.New(filepath.Join(home, ".devdigest", "secrets.json"), getenv),
+		Log:       quiet,
+	}).Handler())
 	defer goAPI.Close()
 
 	compare := func(path string) any {
@@ -79,6 +101,9 @@ func TestParityWithTypeScript(t *testing.T) {
 	const missing = "00000000-0000-0000-0000-000000000000"
 	compare("/health")
 	compare("/health/ready")
+	compare("/settings")
+	compare("/settings/secrets-status")
+	compare("/workspace")
 	compare("/repos/" + missing + "/pulls")
 	compare("/pulls/" + missing)
 	repos, _ := compare("/repos").([]any)
@@ -103,6 +128,38 @@ func TestParityWithTypeScript(t *testing.T) {
 			compare(fmt.Sprintf("%s/versions/%d", base, int(n)))
 		}
 		compare(base + "/versions/999")
+	}
+}
+
+// serverDir is the TS server's directory, its working directory when running.
+func serverDir() string {
+	_, file, _, _ := runtime.Caller(0)
+	return filepath.Join(filepath.Dir(file), "..", "..", "..", "server")
+}
+
+// tsEnv returns the environment the TS server sees: the process environment,
+// then server/.env, which dotenv loads without overriding what is already set.
+func tsEnv(t *testing.T) func(string) string {
+	t.Helper()
+	dotenv := map[string]string{}
+	data, err := os.ReadFile(filepath.Join(serverDir(), ".env"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok {
+			dotenv[strings.TrimSpace(k)] = strings.Trim(strings.TrimSpace(v), `"'`)
+		}
+	}
+	return func(k string) string {
+		if v, ok := os.LookupEnv(k); ok {
+			return v
+		}
+		return dotenv[k]
 	}
 }
 

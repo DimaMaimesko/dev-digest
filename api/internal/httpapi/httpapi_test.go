@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -16,22 +17,32 @@ import (
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
 	"github.com/DimaMaimesko/dev-digest/api/internal/pgtest"
+	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
 const webOrigin = "http://localhost:3000"
 
 var quiet = slog.New(slog.DiscardHandler)
 
-// fixture is a database with the rows the tests read.
+// fixture is a database with the rows the tests read, and the server's
+// secrets file and environment.
 type fixture struct {
-	db        *pgxpool.Pool
-	workspace uuid.UUID
-	user      uuid.UUID
+	db          *pgxpool.Pool
+	workspace   uuid.UUID
+	user        uuid.UUID
+	secretsFile string // doesn't exist until a test writes it
+	env         map[string]string
 }
+
+const cloneDir = "/work/clones"
 
 func newFixture(t *testing.T) fixture {
 	t.Helper()
-	f := fixture{db: pgtest.New(t)}
+	f := fixture{
+		db:          pgtest.New(t),
+		secretsFile: filepath.Join(t.TempDir(), "secrets.json"),
+		env:         map[string]string{},
+	}
 	f.workspace = f.insertID(t, `INSERT INTO workspaces (name) VALUES ('default') RETURNING id`)
 	f.user = f.insertID(t, `INSERT INTO users (email, name) VALUES ('you@local', 'You') RETURNING id`)
 	return f
@@ -56,7 +67,14 @@ func (f fixture) get(t *testing.T, path string) *http.Response {
 
 func (f fixture) serve(req *http.Request) *http.Response {
 	rec := httptest.NewRecorder()
-	httpapi.New(f.db, f.workspace, webOrigin, quiet).Handler().ServeHTTP(rec, req)
+	httpapi.New(httpapi.Config{
+		DB:        f.db,
+		Workspace: f.workspace,
+		WebOrigin: webOrigin,
+		CloneDir:  cloneDir,
+		Secrets:   secrets.New(f.secretsFile, func(k string) string { return f.env[k] }),
+		Log:       quiet,
+	}).Handler().ServeHTTP(rec, req)
 	return rec.Result()
 }
 

@@ -14,28 +14,42 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
 // Server handles the API's requests.
 type Server struct {
-	db      *pgxpool.Pool
-	queries *postgres.Queries
-	log     *slog.Logger
-	// workspace is the one local workspace every request works in, like the
-	// TS server's LocalNoAuthProvider. Real auth would resolve it per request.
+	db        *pgxpool.Pool
+	queries   *postgres.Queries
+	log       *slog.Logger
 	workspace uuid.UUID
-	webOrigin string // the web app's origin, the only one CORS allows
+	webOrigin string
+	cloneDir  string
+	secrets   *secrets.Store
 }
 
-// New returns a Server that works in workspace and allows the web app at
-// webOrigin, such as "http://localhost:3000", to call it.
-func New(db *pgxpool.Pool, workspace uuid.UUID, webOrigin string, log *slog.Logger) *Server {
+// Config is what a Server needs.
+type Config struct {
+	DB *pgxpool.Pool
+	// Workspace is the one local workspace every request works in, like the
+	// TS server's LocalNoAuthProvider. Real auth would resolve it per request.
+	Workspace uuid.UUID
+	WebOrigin string // the web app's origin, such as "http://localhost:3000"; the only one CORS allows
+	CloneDir  string // where repositories are cloned
+	Secrets   *secrets.Store
+	Log       *slog.Logger
+}
+
+// New returns a Server.
+func New(cfg Config) *Server {
 	return &Server{
-		db:        db,
-		queries:   postgres.New(db),
-		log:       log,
-		workspace: workspace,
-		webOrigin: webOrigin,
+		db:        cfg.DB,
+		queries:   postgres.New(cfg.DB),
+		log:       cfg.Log,
+		workspace: cfg.Workspace,
+		webOrigin: cfg.WebOrigin,
+		cloneDir:  cfg.CloneDir,
+		secrets:   cfg.Secrets,
 	}
 }
 
@@ -53,6 +67,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /agents/{id}/versions", s.listAgentVersions)
 	mux.HandleFunc("GET /agents/{id}/versions/{version}", s.getAgentVersion)
 	mux.HandleFunc("GET /agents/{id}/skills", s.listAgentSkills)
+	mux.HandleFunc("GET /settings", s.getSettings)
+	mux.HandleFunc("GET /settings/secrets-status", s.secretsStatus)
+	mux.HandleFunc("GET /workspace", s.getWorkspace)
 	mux.HandleFunc("/", notFound)
 
 	return logRequests(s.log, recoverPanics(s.log, cors(s.webOrigin, securityHeaders(mux))))
