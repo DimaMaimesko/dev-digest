@@ -27,8 +27,9 @@ import (
 
 // TestParityWithTypeScript compares the Go handler with a running TS server,
 // both reading the same database, and requires the same status and JSON. It
-// walks the real data: every repository, its pull requests, and each pull
-// request's detail; every agent, its skills and each saved version. Lists are compared in any order, since the web app sorts
+// walks the real data: every repository, its index state and pull requests;
+// each pull request's detail, reviews and runs, and each run's trace; every
+// agent, its skills and each saved version. Lists are compared in any order, since the web app sorts
 // them, and times as instants: right after a GitHub sync the TS server sends
 // GitHub's format ("…41Z"), otherwise JavaScript's ("…41.000Z").
 //
@@ -106,11 +107,24 @@ func TestParityWithTypeScript(t *testing.T) {
 	compare("/workspace")
 	compare("/repos/" + missing + "/pulls")
 	compare("/pulls/" + missing)
+	compare("/repos/" + missing + "/index-state")
+	compare("/pulls/" + missing + "/reviews")
+	compare("/pulls/" + missing + "/runs")
+	compare("/pulls/" + missing + "/runs/active")
+	compare("/runs/" + missing + "/trace")
 	repos, _ := compare("/repos").([]any)
 	for _, repo := range repos {
+		compare("/repos/" + field(repo, "id") + "/index-state")
 		pulls, _ := compare("/repos/" + field(repo, "id") + "/pulls").([]any)
 		for _, pull := range pulls {
-			compare("/pulls/" + field(pull, "id"))
+			id := field(pull, "id")
+			compare("/pulls/" + id)
+			compare("/pulls/" + id + "/reviews")
+			compare("/pulls/" + id + "/runs/active")
+			runs, _ := compare("/pulls/" + id + "/runs").([]any)
+			for _, run := range runs {
+				compare("/runs/" + field(run, "run_id") + "/trace")
+			}
 		}
 	}
 

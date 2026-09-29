@@ -70,6 +70,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /settings", s.getSettings)
 	mux.HandleFunc("GET /settings/secrets-status", s.secretsStatus)
 	mux.HandleFunc("GET /workspace", s.getWorkspace)
+	mux.HandleFunc("GET /repos/{id}/index-state", s.getIndexState)
+	mux.HandleFunc("GET /pulls/{id}/reviews", s.listReviews)
+	mux.HandleFunc("GET /pulls/{id}/runs", s.listRuns)
+	mux.HandleFunc("GET /pulls/{id}/runs/active", s.listActiveRuns)
+	mux.HandleFunc("GET /runs/{id}/trace", s.getRunTrace)
 	mux.HandleFunc("/", notFound)
 
 	return logRequests(s.log, recoverPanics(s.log, cors(s.webOrigin, securityHeaders(mux))))

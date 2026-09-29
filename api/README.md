@@ -4,17 +4,19 @@ A Go rewrite of [`server/`](../server/README.md) and
 [`reviewer-core/`](../reviewer-core/README.md), built to serve the existing
 Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
-**Status:** phase 1 of 6 is done: the review engine runs from the command
-line. Phase 2 has started: the HTTP API serves `/health`, `/health/ready`,
-`GET /repos`, `GET /repos/{id}/pulls`, `GET /pulls/{id}`, and the agent reads
-`GET /agents`, `/agents/{id}`, `/agents/{id}/versions`,
-`/agents/{id}/versions/{version}` and `/agents/{id}/skills`, and
-`GET /settings`, `/settings/secrets-status` and `/workspace`. The web app still
-uses the TypeScript server.
+**Status:** phases 1 and 2 of 6 are done. The review engine runs from the
+command line, and the HTTP API serves 18 of the TS server's 22 `GET` routes:
+health, repositories and their index state, pull requests, agents, settings,
+the workspace, reviews, runs and run traces. All of them match the TS server on
+the dev database (see the parity test below). The web app still uses the TS
+server.
 
-Pull requests are served from the database. With a GitHub token, the TS server
-first syncs them from GitHub on every read; the Go server will do that in
-phase 3, with PR import. Until then it serves what was last synced.
+The other 4 `GET` routes wait for later phases: the model lists
+(`/agents/{id}/models`, `/providers/{id}/models`) need the LLM adapters,
+`/pulls/{id}/comments` proxies GitHub (phase 3), and `/runs/{id}/events`
+streams a running review (phase 4). Pull requests are served from the
+database; with a GitHub token the TS server first syncs them from GitHub on
+every read, which the Go server will do in phase 3.
 
 ## Run the API
 
@@ -38,8 +40,9 @@ curl localhost:3002/workspace
 
 `TestParityWithTypeScript` calls a running TS server and the Go handlers on
 the same database, and requires the same status and JSON. It walks the real
-data: every repository, its pull requests, and each pull request's detail;
-every agent, its skills and each saved version; plus the not-found cases. Lists are compared in any order, and times as
+data: every repository, its index state and pull requests; each pull
+request's detail, reviews and runs, and each run's trace; every agent, its
+skills and each saved version; plus the not-found cases. Lists are compared in any order, and times as
 instants:
 
 ```sh
@@ -181,7 +184,10 @@ provider at once, so it waits for a real need.
 | Order of `GET /repos` and `GET /agents` | No `ORDER BY`, so whatever order Postgres returns | Oldest first |
 | Unknown route | Fastify's own body: `{"message", "error", "statusCode"}` | The API's error envelope: `{"error": {"code": "not_found", "message": ...}}` |
 | No default workspace in the database | Starts; every request fails | Refuses to start and says to run the seed |
-| Order of a PR's files and commits | Whatever order Postgres returns (the tables have no column to sort by) | Files by path, commits by time |
+| Order of a PR's files and commits, and of a review's findings | Whatever order Postgres returns (the tables have no column to sort by) | Files by path, commits by time, findings by location |
+| `GET /runs/{id}/trace` and `GET /repos/{id}/index-state` | Not limited to the workspace: they read any run's trace or repository's state | Limited to the workspace. A repository outside it gets the same "no data" state as an unknown one, so nothing leaks. |
+| Database error in `GET /repos/{id}/index-state` | Reported as "degraded, no_data", like a repository that was never indexed | 500 |
+| Agent names in `GET /pulls/{id}/reviews` | One query per agent | One query for everything (a join) |
 | Times in `GET /pulls/{id}` | GitHub's format (`…41Z`) right after a sync, JavaScript's (`…41.000Z`) otherwise | Always JavaScript's |
 | `details` of a 422 for a bad path value (ID, version number) | Zod's issue objects | `[{"path": ["id"], "message": "Invalid uuid"}]`; same code and message |
 | Listening address | Every network interface (changed in `c477e5a`: both servers now listen on 127.0.0.1 only) | 127.0.0.1 |

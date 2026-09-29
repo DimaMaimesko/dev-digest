@@ -35,6 +35,24 @@ type AgentVersion struct {
 	CreatedAt  time.Time
 }
 
+type Finding struct {
+	ID                 uuid.UUID
+	ReviewID           uuid.UUID
+	File               string
+	StartLine          int32
+	EndLine            int32
+	Severity           string
+	Category           string
+	Title              string
+	Rationale          string
+	Suggestion         *string
+	Confidence         float64
+	Kind               string
+	TrifectaComponents []byte
+	AcceptedAt         *time.Time
+	DismissedAt        *time.Time
+}
+
 type PullRequest struct {
 	ID              uuid.UUID
 	WorkspaceID     uuid.UUID
@@ -66,4 +84,15 @@ type Repo struct {
 	LastPolledAt  *time.Time
 	CreatedBy     *uuid.UUID
 	CreatedAt     time.Time
+}
+
+type RepoIndexState struct {
+	RepoID         uuid.UUID
+	LastIndexedSha string
+	IndexerVersion int32
+	Status         string
+	FilesIndexed   int32
+	FilesSkipped   int32
+	Stats          []byte
+	UpdatedAt      time.Time
 }
