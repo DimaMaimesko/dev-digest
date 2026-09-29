@@ -166,7 +166,7 @@ removed, they become plain regression fixtures.
 | `internal/github` | Client for the parts of GitHub's REST API DevDigest uses (pull requests, their files, commits and review comments), written with `net/http`: retries rate limits, and server errors for reads, 30 s per request | `server/src/adapters/github/octokit.ts`, `platform/resilience.ts` |
 | `internal/anthropic` | Anthropic's API through the official Go SDK ([anthropic-sdk-go](https://github.com/anthropics/anthropic-sdk-go)); for now, the model list. The SDK's own credential lookup is off: the key comes from `internal/secrets`, like the others. | `server/src/adapters/llm/anthropic.ts` |
 | `internal/git` | Runs `git` in a repository's clone; for now, the diff a review reads | `server/src/adapters/git/simple-git.ts` |
-| `internal/repointel` | Reads the repo-intel index for a review's context: the repository map and how depended-on each file is. The TS server builds the index until phase 5. | `getRepoMap` and `getFileRank` in `server/src/modules/repo-intel/service.ts` |
+| `internal/repointel` | A review's context from repo-intel: the repository map and file ranks, read from the index the TS server builds until phase 5; and the callers of the symbols a change declares, found in the clone: `ParseSymbols` parses TypeScript and JavaScript with tree-sitter, `References` finds the lines that use a symbol | `getRepoMap`, `getFileRank` and `getCallerSignatures` in `server/src/modules/repo-intel/service.ts`, `parseSymbols` in `server/src/adapters/astgrep`, `extractReferences` in `server/src/adapters/codeindex/extract.ts` |
 | `internal/pulls` | Saving pull requests from GitHub: the list, missing diff stats, one pull request with its files and commits | the sync code in `server/src/modules/pulls/routes.ts` and `polling/routes.ts` |
 | `internal/secrets` | API keys and tokens: `~/.devdigest/secrets.json` first, then the environment | `server/src/adapters/secrets/local.ts` |
 | `internal/pgtest` | A throwaway, migrated Postgres for tests: one container per test binary, one database per test | `server/test/helpers/pg.ts` |
@@ -175,7 +175,17 @@ Dependencies point inward: `cmd/review` wires `openai` into `review`; `openai`
 imports `review` for the types of the `LLM` interface; `review` imports only
 `diff`, and nothing in the review engine uses a package outside the standard
 library. The API adds `pgx` (the Postgres driver), `google/uuid`, Anthropic's
-official SDK, and, for tests only, `testcontainers-go`.
+official SDK, tree-sitter with its TypeScript and JavaScript grammars
+(`go-tree-sitter`, which uses cgo: building needs a C compiler, such as
+Xcode's), and, for tests only, `testcontainers-go`.
+
+**How the TS parsing is checked.** `ParseSymbols` and `References` must find
+exactly what the TS server's ast-grep and regex code find, since what they
+find goes into the review prompt. `testdata/symbols.golden.json` and
+`testdata/references.golden.json` were made by running the TS functions on
+the inputs next to them. Run once on every TypeScript and JavaScript file of
+this repository (396 files, 1465 symbols), and on real changes to the
+dev-digest clone, Go and TS agreed on everything.
 
 ## Commands
 
@@ -290,6 +300,8 @@ provider at once, so it waits for a real need.
 | `github_comment_failed` error | Octokit's message, with the error again in `details.cause` | GitHub's status and message, no details |
 | Anthropic's model list | **Only the first page, 20 models**: the code reads the page's `.data` instead of iterating it. Reproduced against a fake API with 25 models on two pages: TS listed 20. The key sees 13 models today, so none are missing yet. | Every page |
 | Fields of a listed model | Only the ones its provider fills: `created` for OpenAI, `label` for Anthropic, `label`, `pricing` and `contextLength` for OpenRouter | All of them, null when unknown |
+| A signature cut at 120 characters | Can cut an emoji in half, leaving invalid text | Cuts between characters |
+| Order the callers search reads a clone's files | The file system's (sorted by name on macOS, not on Linux) | Sorted by name |
 | A GitHub request times out | Not retried. The 30 s limit covers the whole detail fetch (3 to 4 requests). | Retried, like a server error. The limit is 30 s per request. |
 
 Kept as in TS, though odd:
