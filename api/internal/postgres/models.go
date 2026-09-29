@@ -10,6 +10,26 @@ import (
 	"github.com/google/uuid"
 )
 
+type PullRequest struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	RepoID          uuid.UUID
+	Number          int32
+	Title           string
+	Author          string
+	Branch          string
+	Base            string
+	HeadSha         string
+	LastReviewedSha *string
+	Additions       int32
+	Deletions       int32
+	FilesCount      int32
+	Status          string
+	Body            *string
+	OpenedAt        *time.Time
+	UpdatedAt       *time.Time
+}
+
 type Repo struct {
 	ID            uuid.UUID
 	WorkspaceID   uuid.UUID

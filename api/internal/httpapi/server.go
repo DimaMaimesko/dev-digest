@@ -45,6 +45,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /health", s.health)
 	mux.HandleFunc("GET /health/ready", s.ready)
 	mux.HandleFunc("GET /repos", s.listRepos)
+	mux.HandleFunc("GET /repos/{id}/pulls", s.listPulls)
+	mux.HandleFunc("GET /pulls/{id}", s.getPull)
 	mux.HandleFunc("/", notFound)
 
 	return logRequests(s.log, recoverPanics(s.log, cors(s.webOrigin, securityHeaders(mux))))
@@ -63,14 +65,34 @@ type errorBody struct {
 	Error struct {
 		Code    string `json:"code"`
 		Message string `json:"message"`
+		Details any    `json:"details,omitempty"`
 	} `json:"error"`
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
+	writeErrorDetails(w, status, code, message, nil)
+}
+
+func writeErrorDetails(w http.ResponseWriter, status int, code, message string, details any) {
 	var body errorBody
 	body.Error.Code = code
 	body.Error.Message = message
+	body.Error.Details = details
 	writeJSON(w, status, body)
+}
+
+// pathID reads the {id} path value as a UUID in its standard 36-character
+// form, which is all the TS server accepts. For anything else it answers 422
+// and returns false.
+func pathID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
+	raw := r.PathValue("id")
+	id, err := uuid.Parse(raw)
+	if err != nil || len(raw) != 36 { // uuid.Parse also takes "urn:uuid:…" and no-hyphen forms
+		writeErrorDetails(w, http.StatusUnprocessableEntity, "validation_error", "Request validation failed",
+			[]map[string]any{{"path": []string{"id"}, "message": "Invalid uuid"}})
+		return uuid.Nil, false
+	}
+	return id, true
 }
 
 // internalError logs err and sends a 500 without its details.

@@ -5,8 +5,13 @@ A Go rewrite of [`server/`](../server/README.md) and
 Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
 **Status:** phase 1 of 6 is done: the review engine runs from the command
-line. Phase 2 has started: the HTTP API serves `/health`, `/health/ready` and
-`GET /repos`. The web app still uses the TypeScript server.
+line. Phase 2 has started: the HTTP API serves `/health`, `/health/ready`,
+`GET /repos`, `GET /repos/{id}/pulls` and `GET /pulls/{id}`. The web app still
+uses the TypeScript server.
+
+Pull requests are served from the database. With a GitHub token, the TS server
+first syncs them from GitHub on every read; the Go server will do that in
+phase 3, with PR import. Until then it serves what was last synced.
 
 ## Run the API
 
@@ -24,14 +29,16 @@ curl localhost:3002/repos
 ## Checking it matches the TS server
 
 `TestParityWithTypeScript` calls a running TS server and the Go handlers on
-the same database, and requires the same status and JSON for every ported
-route:
+the same database, and requires the same status and JSON. It walks the real
+data: every repository, its pull requests, and each pull request's detail,
+plus the not-found cases. Lists are compared in any order, and times as
+instants:
 
 ```sh
 PARITY_TS_URL=http://localhost:3001 go test ./internal/httpapi -run Parity -v
 ```
 
-Add each newly ported route to `parityPaths` in `internal/httpapi/parity_test.go`.
+Add each newly ported route to the walk in `internal/httpapi/parity_test.go`.
 
 ## Review a diff from the command line
 
@@ -165,6 +172,14 @@ provider at once, so it waits for a real need.
 | Order of `GET /repos` | No `ORDER BY`, so whatever order Postgres returns | Oldest first |
 | Unknown route | Fastify's own body: `{"message", "error", "statusCode"}` | The API's error envelope: `{"error": {"code": "not_found", "message": ...}}` |
 | No default workspace in the database | Starts; every request fails | Refuses to start and says to run the seed |
+| Order of a PR's files and commits | Whatever order Postgres returns (the tables have no column to sort by) | Files by path, commits by time |
+| Times in `GET /pulls/{id}` | GitHub's format (`…41Z`) right after a sync, JavaScript's (`…41.000Z`) otherwise | Always JavaScript's |
+| `details` of a 422 for a bad ID | Zod's issue objects | `[{"path": ["id"], "message": "Invalid uuid"}]`; same code and message |
+| Listening address | Every network interface (changed in `c477e5a`: both servers now listen on 127.0.0.1 only) | 127.0.0.1 |
+
+Kept as in TS, though odd: the PR list shows a review status (`needs_review`,
+`reviewed`, `stale`), but `GET /pulls/{id}` shows GitHub's state (`open`) for
+the same pull request.
 
 Not ported yet: the lethal-trifecta fields (`trifecta_components`,
 `evidence`) stay in the schema, so the model's answer has the same shape, but

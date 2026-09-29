@@ -31,10 +31,7 @@ func toRepoJSON(r postgres.Repo) repoJSON {
 		DefaultBranch: r.DefaultBranch,
 		ClonePath:     r.ClonePath,
 	}
-	if r.LastPolledAt != nil {
-		t := jsTime(*r.LastPolledAt)
-		out.LastPolledAt = &t
-	}
+	out.LastPolledAt = jsTimePtr(r.LastPolledAt)
 	if r.CreatedBy != nil {
 		id := r.CreatedBy.String()
 		out.CreatedBy = &id

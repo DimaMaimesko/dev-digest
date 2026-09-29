@@ -82,6 +82,18 @@ func assertJSON(t *testing.T, res *http.Response, status int, want string) {
 	}
 }
 
+// decode checks a response's status and decodes its JSON body into v.
+func decode(t *testing.T, res *http.Response, status int, v any) {
+	t.Helper()
+	body, _ := io.ReadAll(res.Body)
+	if res.StatusCode != status {
+		t.Fatalf("status = %d, want %d; body: %s", res.StatusCode, status, body)
+	}
+	if err := json.Unmarshal(body, v); err != nil {
+		t.Fatalf("decode body: %v\n%s", err, body)
+	}
+}
+
 func TestListRepos(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

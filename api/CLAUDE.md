@@ -77,7 +77,7 @@ Run from `api/`:
 The migration plan has 6 phases. Update this list as phases finish.
 
 1. ✅ Port `reviewer-core` into `internal/review`, with an OpenAI-compatible adapter and the `cmd/review` CLI
-2. **In progress:** API skeleton and read endpoints (`/health` ✅, `/health/ready` ✅, `GET /repos` ✅; pulls, agents, settings next). Add each route to `parityPaths` and run the parity test.
+2. **In progress:** API skeleton and read endpoints (`/health` ✅, `/health/ready` ✅, `GET /repos` ✅, `GET /repos/{id}/pulls` ✅, `GET /pulls/{id}` ✅; agents, settings next). Add each route to the walk in `parity_test.go` and run the parity test. GitHub sync of pull requests and `GET /pulls/{id}/comments` wait for phase 3.
 3. Write paths: agents, settings, add repo, PR import
 4. Reviews: run executor, background runs, SSE
 5. repo-intel (tree-sitter)
