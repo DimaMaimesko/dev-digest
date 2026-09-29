@@ -1,5 +1,9 @@
 # api suite — the Go rewrite of the backend (api/).
-# gofmt, go vet, staticcheck and the race-enabled tests; hermetic, no Docker.
+# gofmt, go vet, staticcheck and the race-enabled tests. Database tests start
+# Postgres with testcontainers, using the runner's Docker.
+#
+# server/src/db/migrations/** is in the path filter because the tests and sqlc
+# read the schema from the TS server's migrations.
 name: api
 
 on:
@@ -7,10 +11,12 @@ on:
     branches: [main]
     paths:
       - 'api/**'
+      - 'server/src/db/migrations/**'
       - '.github/workflows/api.yml'
   pull_request:
     paths:
       - 'api/**'
+      - 'server/src/db/migrations/**'
       - '.github/workflows/api.yml'
 
 permissions:
@@ -33,9 +39,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: api/go.mod
-          # No dependencies yet, so no go.sum to key a cache on. Turn caching
-          # on (cache-dependency-path: api/go.sum) with the first dependency.
-          cache: false
+          cache-dependency-path: api/go.sum
 
       - run: go install honnef.co/go/tools/cmd/staticcheck@2026.1
 

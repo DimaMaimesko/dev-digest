@@ -1,4 +1,4 @@
-.PHONY: check fmt fmt-check vet lint test
+.PHONY: check fmt fmt-check vet lint test generate
 
 # Everything CI runs. Run it before every commit.
 check: fmt-check vet lint test
@@ -17,5 +17,11 @@ vet:
 lint:
 	staticcheck ./...
 
+# Tests that need a database start Postgres in Docker, and skip without it.
 test:
 	go test -race ./...
+
+# Regenerate internal/postgres from the SQL in internal/postgres/queries.
+# The first run compiles sqlc's Postgres parser, which takes a few minutes.
+generate:
+	go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate

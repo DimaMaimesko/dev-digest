@@ -53,17 +53,23 @@ Other rules:
 
 ```
 api/
-  cmd/review      command-line review of a diff
-  internal/diff   parse unified diffs; which new-file lines a hunk shows
-  internal/review domain: findings, grounding, prompt, LLM interface, structured output, Run
-  internal/openai adapter: OpenAI-compatible chat completions (OpenAI, OpenRouter, Ollama)
+  cmd/api           HTTP API server
+  cmd/review        command-line review of a diff
+  internal/httpapi  routes, JSON, middleware (CORS, security headers, logs)
+  internal/postgres sqlc-generated queries; edit queries/*.sql, then `make generate`
+  internal/pgtest   throwaway migrated Postgres for tests
+  internal/diff     parse unified diffs; which new-file lines a hunk shows
+  internal/review   domain: findings, grounding, prompt, LLM interface, structured output, Run
+  internal/openai   adapter: OpenAI-compatible chat completions (OpenAI, OpenRouter, Ollama)
 ```
 
 ## Commands
 
 Run from `api/`:
 
-- `make check`: gofmt check, `go vet`, `staticcheck`, `go test -race`. Run it before every commit.
+- `make check`: gofmt check, `go vet`, `staticcheck`, `go test -race`. Run it before every commit. Database tests need Docker running.
+- `make generate`: regenerate `internal/postgres` after changing SQL.
+- `PARITY_TS_URL=http://localhost:3001 go test ./internal/httpapi -run Parity -v`: compare with the running TS server.
 - `make fmt`: format everything.
 
 ## Status
@@ -71,7 +77,7 @@ Run from `api/`:
 The migration plan has 6 phases. Update this list as phases finish.
 
 1. ✅ Port `reviewer-core` into `internal/review`, with an OpenAI-compatible adapter and the `cmd/review` CLI
-2. **Next:** API skeleton and read endpoints
+2. **In progress:** API skeleton and read endpoints (`/health` ✅, `/health/ready` ✅, `GET /repos` ✅; pulls, agents, settings next). Add each route to `parityPaths` and run the parity test.
 3. Write paths: agents, settings, add repo, PR import
 4. Reviews: run executor, background runs, SSE
 5. repo-intel (tree-sitter)
