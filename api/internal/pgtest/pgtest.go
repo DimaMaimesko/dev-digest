@@ -6,10 +6,8 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +16,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+
+	"github.com/DimaMaimesko/dev-digest/api/internal/migrate"
 )
 
 // template is the database every test database is copied from.
@@ -41,6 +41,18 @@ var (
 // New skips the test when Docker isn't running.
 func New(t *testing.T) *pgxpool.Pool {
 	t.Helper()
+	return open(t, template)
+}
+
+// NewEmpty is New for a database with no migration applied: nothing but
+// what Postgres creates.
+func NewEmpty(t *testing.T) *pgxpool.Pool {
+	t.Helper()
+	return open(t, "template0")
+}
+
+func open(t *testing.T, from string) *pgxpool.Pool {
+	t.Helper()
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 	startOnce.Do(func() { startErr = start(context.Background()) })
 	if startErr != nil {
@@ -48,7 +60,7 @@ func New(t *testing.T) *pgxpool.Pool {
 	}
 
 	ctx := context.Background()
-	name := newDatabase(t, ctx)
+	name := newDatabase(t, ctx, from)
 	pool, err := pgxpool.New(ctx, withDatabase(adminURL, name))
 	if err != nil {
 		t.Fatalf("connect to %s: %v", name, err)
@@ -57,7 +69,7 @@ func New(t *testing.T) *pgxpool.Pool {
 	return pool
 }
 
-func newDatabase(t *testing.T, ctx context.Context) string {
+func newDatabase(t *testing.T, ctx context.Context, from string) string {
 	t.Helper()
 	createMu.Lock()
 	defer createMu.Unlock()
@@ -69,7 +81,7 @@ func newDatabase(t *testing.T, ctx context.Context) string {
 		t.Fatalf("connect to test Postgres: %v", err)
 	}
 	defer conn.Close(ctx)
-	if _, err := conn.Exec(ctx, "CREATE DATABASE "+name+" TEMPLATE "+template); err != nil {
+	if _, err := conn.Exec(ctx, "CREATE DATABASE "+name+" TEMPLATE "+from); err != nil {
 		t.Fatalf("create database %s: %v", name, err)
 	}
 	return name
@@ -105,39 +117,9 @@ func start(ctx context.Context) error {
 		return err
 	}
 	defer conn.Close(ctx)
-	return migrate(ctx, conn)
-}
-
-// migrate applies the TS server's Drizzle migrations in order, the way
-// server/src/db/migrate.ts does. Their names start with a sequence number
-// (0000_init.sql, ...), so name order is migration order.
-func migrate(ctx context.Context, conn *pgx.Conn) error {
-	// The migrations declare vector columns but don't create the pgvector
-	// extension; migrate.ts creates it first.
-	if _, err := conn.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); err != nil {
-		return err
-	}
-	dir := migrationsDir()
-	files, err := filepath.Glob(filepath.Join(dir, "*.sql"))
-	if err != nil {
-		return err
-	}
-	if len(files) == 0 {
-		return fmt.Errorf("no migrations in %s", dir)
-	}
-	slices.Sort(files)
-	for _, f := range files {
-		sql, err := os.ReadFile(f)
-		if err != nil {
-			return err
-		}
-		// With no arguments, pgx sends the file as one simple-protocol query,
-		// which may hold many statements.
-		if _, err := conn.Exec(ctx, string(sql)); err != nil {
-			return fmt.Errorf("%s: %w", filepath.Base(f), err)
-		}
-	}
-	return nil
+	// With internal/migrate, as the API's databases are.
+	_, err = migrate.Run(ctx, conn, migrationsDir())
+	return err
 }
 
 // migrationsDir finds the Drizzle migrations from this source file, so it

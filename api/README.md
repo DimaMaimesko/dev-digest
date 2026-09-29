@@ -8,10 +8,33 @@ Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 command line, and the HTTP API serves all 22 of the TS server's `GET` routes,
 runs reviews, and adds, clones, indexes and deletes repositories: all 40 of
 its routes are ported, and match the TS server on the dev database (see the
-parity test below). The web app can run on the Go server alone; the TS server
-still owns the database migrations and the seed (phase 6). With a GitHub token, reading pull
+parity test below). The database can be migrated and seeded from Go too
+(`cmd/db`), so the web app can run on the Go server alone. The TS server stays
+in the repository for now, as the reference the parity tests compare with. With a GitHub token, reading pull
 requests first syncs them from GitHub, as in TS; without one, or when GitHub
 can't be reached, the saved ones are served.
+
+## Migrate and seed the database
+
+```sh
+cd api
+go run ./cmd/db migrate   # apply the migrations the database hasn't had
+go run ./cmd/db seed      # default workspace and user, settings, demo data, agents
+```
+
+Both use `DATABASE_URL` (default: the docker-compose database). The
+migrations are still the SQL files Drizzle generates in
+`server/src/db/migrations` (`-dir` or `MIGRATIONS_DIR` point elsewhere), and
+`internal/migrate` records them the way Drizzle's migrator does, in
+`drizzle.__drizzle_migrations`, with the same SHA-256 and time: a database
+either one migrated goes on with the other. The seed is idempotent, like the
+TS one: it adds only what isn't there, and never overwrites a setting.
+
+Checked on throwaway databases: one migrated and seeded by the TS server,
+one by Go, and one by TS then Go. The schemas (`pg_dump --schema-only`),
+Drizzle's records and every seeded row were identical, and Go found nothing
+to do on the TS one. The test databases (`internal/pgtest`) are migrated
+with `internal/migrate`.
 
 ## Run the API
 
@@ -211,6 +234,9 @@ removed, they become plain regression fixtures.
 | `internal/runner` | Runs reviews in the background: the diff (git, or the saved patches), the repo-intel context, the review engine, then the review, findings and trace saved in one transaction. Keeps each run's live log in memory for its followers. | `server/src/modules/reviews/run-executor.ts`, `service.ts`, `diff-loader.ts`, `platform/sse.ts`, `platform/run-logger.ts` |
 | `internal/repos` | Adding a GitHub repository from its URL, cloning it, refreshing and removing it | `server/src/modules/repos` |
 | `internal/jobs` | Runs slow work in the background, 3 at a time, 2 minutes each at most, and records each job in the `jobs` table | `server/src/platform/jobs.ts` |
+| `internal/migrate` | Applies the Drizzle migrations, recorded as Drizzle's migrator does | `server/src/db/migrate.ts`, drizzle-orm's `migrator` |
+| `internal/seed` | The starting data: workspace, user, settings, demo repository and review, built-in agents (their prompts embedded, copies of `docs/agent-prompts`) | `server/src/db/seed.ts`, `seed-prompts.ts` |
+| `cmd/db` | `db migrate` and `db seed` | the `db:migrate` and `db:seed` scripts |
 | `internal/pulls` | Saving pull requests from GitHub: the list, missing diff stats, one pull request with its files and commits | the sync code in `server/src/modules/pulls/routes.ts` and `polling/routes.ts` |
 | `internal/secrets` | API keys and tokens: `~/.devdigest/secrets.json` first, then the environment | `server/src/adapters/secrets/local.ts` |
 | `internal/pgtest` | A throwaway, migrated Postgres for tests: one container per test binary, one database per test | `server/test/helpers/pg.ts` |
@@ -379,6 +405,8 @@ provider at once, so it waits for a real need.
 | Writing an index | Statement by statement: the index can be read half-written, and a failure leaves it so | One transaction, and one run per repository at a time |
 | A file that takes long to parse | Given up after 2 s | No limit: tree-sitter parses in linear time; the run's 110 s budget still applies |
 | Symbols the repository map ranks equal (same rank, export, line and name) | In the order Postgres returns | Also ordered by path |
+| Two migrators at once | Both apply the pending migrations: Drizzle takes no lock | They take turns (an advisory lock) |
+| Seeding | Statement by statement: a failure leaves part of it, and two seeds at once can make two default workspaces | One transaction, one seed at a time |
 | A GitHub request times out | Not retried. The 30 s limit covers the whole detail fetch (3 to 4 requests). | Retried, like a server error. The limit is 30 s per request. |
 
 Kept as in TS, though odd:
