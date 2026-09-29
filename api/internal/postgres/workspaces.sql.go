@@ -11,6 +11,17 @@ import (
 	"github.com/google/uuid"
 )
 
+const userByEmail = `-- name: UserByEmail :one
+SELECT id FROM users WHERE email = $1 LIMIT 1
+`
+
+func (q *Queries) UserByEmail(ctx context.Context, email string) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, userByEmail, email)
+	var id uuid.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const workspaceByName = `-- name: WorkspaceByName :one
 SELECT id FROM workspaces WHERE name = $1 LIMIT 1
 `

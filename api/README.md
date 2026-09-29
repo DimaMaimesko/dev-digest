@@ -36,6 +36,19 @@ cd ../server
 curl localhost:3002/workspace
 ```
 
+## Writes ported so far
+
+`PUT /settings`, checked by the parity test with requests that change
+nothing: an empty update and invalid ones. It validates the known preferences like the TS server's Zod
+schema, and saves all keys in one transaction.
+
+`POST /settings/test-connection` stays on the TS server for now, reached
+through the fallback proxy. It saves API keys to `~/.devdigest/secrets.json`,
+and the TS server reads that file once and caches it: a key saved by the Go
+server wouldn't reach the TS server, which still runs the reviews, until a
+restart. The Go server re-reads the file on every use, so it sees keys the TS
+server saves. It moves once the reviews do (phase 4).
+
 ## Use the web app with the Go server
 
 The Go server can forward every request it doesn't handle yet to the TS
@@ -225,6 +238,8 @@ provider at once, so it waits for a real need.
 | Secrets file that isn't valid JSON | Treated as empty: every key looks "Not set", with no hint why | An error naming the file; the request fails with 500 |
 | `GITHUB_TOKEN=` empty (as `.env.example` ships it) and `GITHUB_PAT` set | **Returns `""`**: `"" ?? GITHUB_PAT` doesn't fall back, so the documented `GITHUB_PAT` fallback never works after copying `.env.example` | Uses `GITHUB_PAT` |
 | A setting stored both workspace-wide and for the user | Whichever row Postgres returns last | The user's own value |
+| `PUT /settings` failing halfway | The keys before the failure stay saved | Nothing is saved: one transaction |
+| Body errors (`PUT` and future writes) | Empty or broken JSON: 400 with code `internal_error`; a `text/plain` body is read as a JSON string (then 422) | 400 `bad_request` or `invalid_json`; 415 `unsupported_media_type` for anything but JSON. Over 1 MB is 413 in both. |
 
 Kept as in TS, though odd: the PR list shows a review status (`needs_review`,
 `reviewed`, `stale`), but `GET /pulls/{id}` shows GitHub's state (`open`) for

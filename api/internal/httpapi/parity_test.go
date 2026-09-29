@@ -70,9 +70,14 @@ func TestParityWithTypeScript(t *testing.T) {
 		cloneDir = filepath.Join(serverDir(), v)
 	}
 	home, _ := os.UserHomeDir()
+	user, err := postgres.New(db).UserByEmail(ctx, "you@local")
+	if err != nil {
+		t.Fatalf("find the local user: %v", err)
+	}
 	goAPI := httptest.NewServer(httpapi.New(httpapi.Config{
 		DB:        db,
 		Workspace: workspace,
+		User:      user,
 		WebOrigin: webOrigin,
 		CloneDir:  cloneDir,
 		Secrets:   secrets.New(filepath.Join(home, ".devdigest", "secrets.json"), getenv),
@@ -126,6 +131,25 @@ func TestParityWithTypeScript(t *testing.T) {
 				compare("/runs/" + field(run, "run_id") + "/trace")
 			}
 		}
+	}
+
+	// Writes that change nothing: an empty update, and invalid ones. For an
+	// error, the status, code and message must match; the details are Zod's
+	// in TS and simpler in Go.
+	for _, body := range []string{`{}`, `{"theme": "blue"}`, `{"polling_interval_min": 0}`, `[1]`, `null`} {
+		t.Run("PUT /settings "+body, func(t *testing.T) {
+			tsStatus, ts := sendJSON(t, http.MethodPut, tsURL+"/settings", body)
+			goStatus, gb := sendJSON(t, http.MethodPut, goAPI.URL+"/settings", body)
+			if tsStatus != goStatus {
+				t.Errorf("status: TS %d, Go %d", tsStatus, goStatus)
+			}
+			if tsStatus >= 400 {
+				ts, gb = errorWithoutDetails(ts), errorWithoutDetails(gb)
+			}
+			if !reflect.DeepEqual(normalize(ts), normalize(gb)) {
+				t.Errorf("bodies differ\nTS: %v\nGo: %v", ts, gb)
+			}
+		})
 	}
 
 	for _, path := range []string{"", "/versions", "/versions/1", "/skills"} {
@@ -209,6 +233,36 @@ func normalize(v any) any {
 			return strings.Compare(string(ja), string(jb))
 		})
 		return out
+	}
+	return v
+}
+
+// sendJSON sends a request with a JSON body and decodes the JSON answer.
+func sendJSON(t *testing.T, method, url, body string) (int, any) {
+	t.Helper()
+	req, err := http.NewRequest(method, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var v any
+	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
+		t.Fatalf("%s %s: answer is not JSON: %v", method, url, err)
+	}
+	return res.StatusCode, v
+}
+
+// errorWithoutDetails returns an error envelope without its details.
+func errorWithoutDetails(v any) any {
+	if m, ok := v.(map[string]any); ok {
+		if e, ok := m["error"].(map[string]any); ok {
+			delete(e, "details")
+		}
 	}
 	return v
 }

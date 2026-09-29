@@ -6,3 +6,8 @@ SELECT key, value
 FROM settings
 WHERE workspace_id = $1
 ORDER BY key, user_id NULLS FIRST;
+
+-- name: UpsertSetting :exec
+INSERT INTO settings (workspace_id, user_id, key, value)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (workspace_id, user_id, key) DO UPDATE SET value = EXCLUDED.value;

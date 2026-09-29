@@ -45,3 +45,26 @@ func (q *Queries) ListSettings(ctx context.Context, workspaceID uuid.UUID) ([]Li
 	}
 	return items, nil
 }
+
+const upsertSetting = `-- name: UpsertSetting :exec
+INSERT INTO settings (workspace_id, user_id, key, value)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (workspace_id, user_id, key) DO UPDATE SET value = EXCLUDED.value
+`
+
+type UpsertSettingParams struct {
+	WorkspaceID uuid.UUID
+	UserID      *uuid.UUID
+	Key         string
+	Value       []byte
+}
+
+func (q *Queries) UpsertSetting(ctx context.Context, arg UpsertSettingParams) error {
+	_, err := q.db.Exec(ctx, upsertSetting,
+		arg.WorkspaceID,
+		arg.UserID,
+		arg.Key,
+		arg.Value,
+	)
+	return err
+}

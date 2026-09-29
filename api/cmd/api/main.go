@@ -76,6 +76,13 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if err != nil {
 		return fmt.Errorf("find the default workspace: %w", err)
 	}
+	user, err := postgres.New(pool).UserByEmail(ctx, "you@local")
+	if errors.Is(err, pgx.ErrNoRows) {
+		return errors.New("the database has no local user (you@local); run `pnpm db:seed` in server/")
+	}
+	if err != nil {
+		return fmt.Errorf("find the local user: %w", err)
+	}
 
 	// Loopback only, like the TS server: the API stores API keys and runs git,
 	// so other machines on the network must not reach it.
@@ -87,6 +94,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		Handler: httpapi.New(httpapi.Config{
 			DB:        pool,
 			Workspace: workspace,
+			User:      user,
 			WebOrigin: cfg.webOrigin,
 			CloneDir:  cfg.cloneDir,
 			Secrets:   secrets.New(cfg.secretsPath, getenv),

@@ -4,8 +4,12 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,6 +28,7 @@ type Server struct {
 	queries   *postgres.Queries
 	log       *slog.Logger
 	workspace uuid.UUID
+	user      uuid.UUID
 	webOrigin string
 	cloneDir  string
 	secrets   *secrets.Store
@@ -36,6 +41,8 @@ type Config struct {
 	// Workspace is the one local workspace every request works in, like the
 	// TS server's LocalNoAuthProvider. Real auth would resolve it per request.
 	Workspace uuid.UUID
+	// User is the one local user, whose preferences the API saves.
+	User      uuid.UUID
 	WebOrigin string // the web app's origin, such as "http://localhost:3000"; the only one CORS allows
 	CloneDir  string // where repositories are cloned
 	Secrets   *secrets.Store
@@ -53,6 +60,7 @@ func New(cfg Config) *Server {
 		queries:   postgres.New(cfg.DB),
 		log:       cfg.Log,
 		workspace: cfg.Workspace,
+		user:      cfg.User,
 		webOrigin: cfg.WebOrigin,
 		cloneDir:  cfg.CloneDir,
 		secrets:   cfg.Secrets,
@@ -75,6 +83,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /agents/{id}/versions/{version}", s.getAgentVersion)
 	mux.HandleFunc("GET /agents/{id}/skills", s.listAgentSkills)
 	mux.HandleFunc("GET /settings", s.getSettings)
+	mux.HandleFunc("PUT /settings", s.putSettings)
 	mux.HandleFunc("GET /settings/secrets-status", s.secretsStatus)
 	mux.HandleFunc("GET /workspace", s.getWorkspace)
 	mux.HandleFunc("GET /repos/{id}/index-state", s.getIndexState)
@@ -145,10 +154,62 @@ func pathPositiveInt(w http.ResponseWriter, r *http.Request, name string) (int32
 	return int32(n), true
 }
 
+// issue is one problem with a request: where it is, such as ["theme"] or
+// ["feature_models", "onboarding", "model"], and what is wrong. A 422
+// response lists them as its details.
+type issue struct {
+	Path    []string `json:"path"`
+	Message string   `json:"message"`
+}
+
+// invalid answers 422 with the issues found.
+func invalid(w http.ResponseWriter, issues []issue) {
+	writeErrorDetails(w, http.StatusUnprocessableEntity, "validation_error", "Request validation failed", issues)
+}
+
 // invalidParam answers 422 for a path value that isn't valid.
 func invalidParam(w http.ResponseWriter, name, message string) {
-	writeErrorDetails(w, http.StatusUnprocessableEntity, "validation_error", "Request validation failed",
-		[]map[string]any{{"path": []string{name}, "message": message}})
+	invalid(w, []issue{{Path: []string{name}, Message: message}})
+}
+
+// maxBody is the largest request body the API reads: 1 MB, as in the TS
+// server.
+const maxBody = 1 << 20
+
+// readJSON decodes the request's JSON body into v, which must be a pointer to
+// a map or struct: every request body is a JSON object. When the body isn't
+// one, it answers with an error and returns false.
+func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	if mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type")); mediaType != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Send the body as JSON, with Content-Type: application/json")
+		return false
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBody))
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		writeError(w, http.StatusRequestEntityTooLarge, "body_too_large", "The request body is larger than 1 MB")
+		return false
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "The request body couldn't be read")
+		return false
+	}
+	body = bytes.TrimSpace(body)
+	if len(body) == 0 {
+		writeError(w, http.StatusBadRequest, "bad_request", "The request body is empty")
+		return false
+	}
+	var typeErr *json.UnmarshalTypeError
+	switch err := json.Unmarshal(body, v); {
+	case errors.As(err, &typeErr) || bytes.Equal(body, []byte("null")):
+		// Valid JSON of the wrong shape, such as an array.
+		invalid(w, []issue{{Path: []string{}, Message: "Expected a JSON object"}})
+		return false
+	case err != nil:
+		writeError(w, http.StatusBadRequest, "invalid_json", "The request body isn't valid JSON")
+		return false
+	}
+	return true
 }
 
 // internalError logs err and sends a 500 without its details.

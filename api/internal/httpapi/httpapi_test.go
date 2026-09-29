@@ -70,6 +70,7 @@ func (f fixture) serve(req *http.Request) *http.Response {
 	httpapi.New(httpapi.Config{
 		DB:        f.db,
 		Workspace: f.workspace,
+		User:      f.user,
 		WebOrigin: webOrigin,
 		CloneDir:  cloneDir,
 		Secrets:   secrets.New(f.secretsFile, func(k string) string { return f.env[k] }),
