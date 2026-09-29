@@ -9,8 +9,8 @@
 #   ./scripts/dev.sh --ts-api     # run the old TS API (server/) instead of Go
 #
 # The API is the Go server (api/), built into api/bin and run with server/.env
-# loaded. Migrations and seed run through api/cmd/db, which the TS server's
-# bookkeeping understands too, so --ts-api works on the same database.
+# loaded. Migrations (api/migrations) and seed run through api/cmd/db, which
+# keeps Drizzle's bookkeeping, so --ts-api works on the same database.
 #
 # Idempotent: re-running installs only what's missing, migrations and seed
 # both upsert. Ctrl-C stops the dev servers and leaves Postgres running.
@@ -119,13 +119,12 @@ if [ "$DB_ONLY" -eq 0 ] && [ "$TS_API" -eq 1 ]; then
 fi
 
 # --- migrate + seed ----------------------------------------------------------
-# From api/, where bin/db finds the migrations (../server/src/db/migrations).
 log "applying migrations"
-(load_server_env; cd api && ./bin/db migrate)
+(load_server_env; api/bin/db migrate)
 
 if [ "$RUN_SEED" -eq 1 ]; then
   log "seeding demo data"
-  (load_server_env; cd api && ./bin/db seed)
+  (load_server_env; api/bin/db seed)
 fi
 
 if [ "$DB_ONLY" -eq 1 ]; then

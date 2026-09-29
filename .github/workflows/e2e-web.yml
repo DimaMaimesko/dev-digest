@@ -7,9 +7,7 @@
 #
 # No API keys: every key is optional, so the API boots and serves the seeded
 # read-only data the specs exercise — no LLM is called.
-#
-# server/src/db/migrations/** is in the path filter because api/cmd/db applies
-# the migrations from there; the rest of server/ no longer runs here.
+
 name: e2e web
 
 on:
@@ -18,14 +16,12 @@ on:
     paths:
       - 'client/**'
       - 'api/**'
-      - 'server/src/db/migrations/**'
       - 'e2e/**'
       - '.github/workflows/e2e-web.yml'
   pull_request:
     paths:
       - 'client/**'
       - 'api/**'
-      - 'server/src/db/migrations/**'
       - 'e2e/**'
       - '.github/workflows/e2e-web.yml'
 
@@ -74,8 +70,8 @@ jobs:
           [ "$(docker inspect -f '{{.State.Health.Status}}' devdigest-postgres)" = "healthy" ]
 
       # --- API: build, migrate, seed, then start in the background ---
-      # bin/db runs from api/, where it finds ../server/src/db/migrations. The
-      # API reads DATABASE_URL from the job env and listens on :3001 by default.
+      # bin/db has the migrations built in. The API reads DATABASE_URL from the
+      # job env and listens on :3001 by default.
       - name: Build + migrate + seed (api)
         working-directory: api
         run: |

@@ -5,25 +5,19 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
-	"path/filepath"
-	"runtime"
+	"io/fs"
 	"slices"
 	"strconv"
 	"sync"
 	"testing"
+	"testing/fstest"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/migrate"
 	"github.com/DimaMaimesko/dev-digest/api/internal/pgtest"
+	"github.com/DimaMaimesko/dev-digest/api/migrations"
 )
-
-// realDir is the TS server's migrations folder.
-func realDir() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..", "..", "server", "src", "db", "migrations")
-}
 
 type recorded struct {
 	Hash string
@@ -49,7 +43,7 @@ func records(t *testing.T, db *pgxpool.Pool) []recorded {
 func TestRunRealMigrations(t *testing.T) {
 	db := pgtest.NewEmpty(t)
 	ctx := context.Background()
-	applied, err := migrate.Run(ctx, db, realDir())
+	applied, err := migrate.Run(ctx, db, migrations.FS)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,13 +53,13 @@ func TestRunRealMigrations(t *testing.T) {
 			When int64
 		}
 	}
-	data, _ := os.ReadFile(filepath.Join(realDir(), "meta", "_journal.json"))
+	data, _ := fs.ReadFile(migrations.FS, "meta/_journal.json")
 	json.Unmarshal(data, &journal)
 	var tags []string
 	var want []recorded
 	for _, e := range journal.Entries {
 		tags = append(tags, e.Tag)
-		sql, _ := os.ReadFile(filepath.Join(realDir(), e.Tag+".sql"))
+		sql, _ := fs.ReadFile(migrations.FS, e.Tag+".sql")
 		sum := sha256.Sum256(sql)
 		want = append(want, recorded{hex.EncodeToString(sum[:]), e.When})
 	}
@@ -82,17 +76,15 @@ func TestRunRealMigrations(t *testing.T) {
 		t.Errorf("%d tables", tables)
 	}
 	// Again: nothing to do.
-	if applied, err := migrate.Run(ctx, db, realDir()); err != nil || len(applied) != 0 {
+	if applied, err := migrate.Run(ctx, db, migrations.FS); err != nil || len(applied) != 0 {
 		t.Errorf("second run: %v, %v", applied, err)
 	}
 }
 
-// dir writes a migrations folder: one migration per SQL text, generated
+// dir returns a migrations folder: one migration per SQL text, generated
 // 1000 ms apart.
-func dir(t *testing.T, sqls ...string) string {
-	t.Helper()
-	d := t.TempDir()
-	os.MkdirAll(filepath.Join(d, "meta"), 0o755)
+func dir(sqls ...string) fstest.MapFS {
+	d := fstest.MapFS{}
 	type entry struct {
 		Idx         int    `json:"idx"`
 		When        int64  `json:"when"`
@@ -102,23 +94,23 @@ func dir(t *testing.T, sqls ...string) string {
 	var entries []entry
 	for i, sql := range sqls {
 		tag := "000" + strconv.Itoa(i) + "_m"
-		os.WriteFile(filepath.Join(d, tag+".sql"), []byte(sql), 0o644)
+		d[tag+".sql"] = &fstest.MapFile{Data: []byte(sql)}
 		entries = append(entries, entry{i, int64(1000 * (i + 1)), tag, true})
 	}
 	data, _ := json.Marshal(map[string]any{"version": "7", "dialect": "postgresql", "entries": entries})
-	os.WriteFile(filepath.Join(d, "meta", "_journal.json"), data, 0o644)
+	d["meta/_journal.json"] = &fstest.MapFile{Data: data}
 	return d
 }
 
 func TestRunAppliesNewerOnly(t *testing.T) {
 	db := pgtest.NewEmpty(t)
 	ctx := context.Background()
-	three := dir(t,
+	three := dir(
 		"CREATE TABLE a (x int);\n--> statement-breakpoint\nINSERT INTO a VALUES (1);",
 		"INSERT INTO a VALUES (2);",
 		"INSERT INTO a VALUES (3);")
 	// A database that has the first two, as the TS server recorded them.
-	if _, err := migrate.Run(ctx, db, dir(t, "CREATE TABLE a (x int);\n--> statement-breakpoint\nINSERT INTO a VALUES (1);", "INSERT INTO a VALUES (2);")); err != nil {
+	if _, err := migrate.Run(ctx, db, dir("CREATE TABLE a (x int);\n--> statement-breakpoint\nINSERT INTO a VALUES (1);", "INSERT INTO a VALUES (2);")); err != nil {
 		t.Fatal(err)
 	}
 	applied, err := migrate.Run(ctx, db, three)
@@ -136,7 +128,7 @@ func TestRunAppliesNewerOnly(t *testing.T) {
 func TestRunFails(t *testing.T) {
 	db := pgtest.NewEmpty(t)
 	ctx := context.Background()
-	if _, err := migrate.Run(ctx, db, dir(t, "CREATE TABLE a (x int);", "INSERT INTO nowhere VALUES (1);")); err == nil {
+	if _, err := migrate.Run(ctx, db, dir("CREATE TABLE a (x int);", "INSERT INTO nowhere VALUES (1);")); err == nil {
 		t.Fatal("no error")
 	}
 	var tables int
@@ -144,9 +136,11 @@ func TestRunFails(t *testing.T) {
 	if tables != 0 {
 		t.Error("the first migration stayed")
 	}
-	for name, d := range map[string]string{
-		"no journal":   t.TempDir(),
-		"no .sql file": func() string { d := dir(t, "SELECT 1;"); os.Remove(filepath.Join(d, "0000_m.sql")); return d }(),
+	noSQL := dir("SELECT 1;")
+	delete(noSQL, "0000_m.sql")
+	for name, d := range map[string]fstest.MapFS{
+		"no journal":   {},
+		"no .sql file": noSQL,
 	} {
 		if _, err := migrate.Run(ctx, db, d); err == nil {
 			t.Errorf("%s: no error", name)
@@ -157,7 +151,7 @@ func TestRunFails(t *testing.T) {
 // Migrators running at once take turns; Drizzle's didn't.
 func TestRunConcurrently(t *testing.T) {
 	db := pgtest.NewEmpty(t)
-	d := dir(t, "CREATE TABLE a (x int);", "INSERT INTO a VALUES (1);")
+	d := dir("CREATE TABLE a (x int);", "INSERT INTO a VALUES (1);")
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	total := 0

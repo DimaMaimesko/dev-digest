@@ -1,7 +1,7 @@
-// Package migrate applies the database migrations: the SQL files Drizzle
-// generated from the TS schema, recorded in the table Drizzle's migrator
-// uses (drizzle.__drizzle_migrations), so a database either migrated keeps
-// working with the other.
+// Package migrate applies the database migrations (the migrations package
+// has them), recorded in the table Drizzle's migrator uses
+// (drizzle.__drizzle_migrations), so a database the TS server migrated keeps
+// working with the Go one, and the other way around.
 package migrate
 
 import (
@@ -11,8 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io/fs"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -32,13 +31,13 @@ type migration struct {
 // breakpoint separates the statements of a migration file.
 const breakpoint = "--> statement-breakpoint"
 
-// Run applies the migrations in dir (Drizzle's folder: meta/_journal.json
+// Run applies the migrations in fsys (Drizzle's layout: meta/_journal.json
 // and one .sql file per entry) that the database hasn't had, in one
 // transaction, and returns their tags. Like Drizzle, a migration counts as
 // applied when it is older than the last one recorded. Unlike Drizzle,
 // migrators running at once take turns.
-func Run(ctx context.Context, db Beginner, dir string) ([]string, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "meta", "_journal.json"))
+func Run(ctx context.Context, db Beginner, fsys fs.FS) ([]string, error) {
+	data, err := fs.ReadFile(fsys, "meta/_journal.json")
 	if err != nil {
 		return nil, fmt.Errorf("read the migrations journal: %w", err)
 	}
@@ -70,7 +69,7 @@ func Run(ctx context.Context, db Beginner, dir string) ([]string, error) {
 			if last != nil && *last >= m.When {
 				continue
 			}
-			sql, err := os.ReadFile(filepath.Join(dir, m.Tag+".sql"))
+			sql, err := fs.ReadFile(fsys, m.Tag+".sql")
 			if err != nil {
 				return fmt.Errorf("migration %s: %w", m.Tag, err)
 			}

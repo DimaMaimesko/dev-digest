@@ -3,9 +3,8 @@
 version: "2"
 sql:
   - engine: postgresql
-    # The tables come from the TS server's Drizzle migrations until phase 6
-    # moves migrations into this module.
-    schema: ../server/src/db/migrations
+    # The tables come from the migrations; sqlc reads the .sql files.
+    schema: migrations
     queries: internal/postgres/queries
     gen:
       go:

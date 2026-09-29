@@ -6,7 +6,7 @@ const DATABASE_URL =
 
 export default defineConfig({
   schema: './src/db/schema.ts',
-  out: './src/db/migrations',
+  out: '../api/migrations', // moved to the Go module
   dialect: 'postgresql',
   dbCredentials: { url: DATABASE_URL },
   // pgvector `vector` type is provided by the extension enabled in migration 0000.

@@ -123,11 +123,10 @@ case "$DATABASE_URL" in
   *":${PG_PORT}/"*) : ;;
   *) echo "refusing: DATABASE_URL is not on :$PG_PORT ($DATABASE_URL)"; exit 1 ;;
 esac
-# From api/, where bin/db finds the migrations (../server/src/db/migrations).
 log "applying migrations (isolated db)"
-(cd api && ./bin/db migrate)
+api/bin/db migrate
 log "seeding demo data (isolated db)"
-(cd api && ./bin/db seed)
+api/bin/db seed
 
 # --- API on :$API_PORT -------------------------------------------------------
 log "starting the Go API on :$API_PORT"

@@ -62,10 +62,11 @@ api/
   cmd/api           HTTP API server
   cmd/review        command-line review of a diff
   cmd/db            migrate and seed the database
+  migrations        the SQL migrations in Drizzle's format (journal + .sql), embedded; sqlc reads them too
   internal/httpapi  routes, JSON, middleware (CORS, security headers, logs)
   internal/postgres sqlc-generated queries; edit queries/*.sql, then `make generate`
   internal/pgtest   throwaway migrated Postgres for tests
-  internal/migrate  applies the Drizzle migrations (Drizzle-compatible bookkeeping)
+  internal/migrate  applies the migrations (Drizzle-compatible bookkeeping)
   internal/seed     the starting data
   internal/secrets  API keys: ~/.devdigest/secrets.json, then the environment
   internal/agents   creating and changing agents, with their version history
@@ -101,4 +102,4 @@ The migration plan has 6 phases. Update this list as phases finish.
 3. ✅ Write paths. ✅ Fallback proxy (`TS_API_URL`): unported routes are forwarded to the TS server, so the web app can run on the Go server. ✅ `PUT /settings`. ✅ Agent writes (`internal/agents`). ✅ Accept and dismiss findings, delete reviews and runs. ✅ GitHub sync on pull request reads, `POST /repos/{id}/poll` (`internal/github`, `internal/pulls`). ✅ PR comments, read and post. ✅ Model lists (`internal/anthropic`). The repository routes and `POST /settings/test-connection` move in phase 5.
 4. ✅ Reviews: inputs (`internal/git`, `internal/repointel` with the tree-sitter callers), Anthropic for reviews, the run executor (`internal/runner`), and the review, events and cancel routes. Prompts checked byte-for-byte against TS with fake models. `POST /settings/test-connection` moves with phase 5 (see "Order the moves by shared state").
 5. ✅ Repositories: clone and fetch, job runner, `POST /repos`, refresh, delete (`internal/repos`, `internal/jobs`); the repo-intel indexer and `POST /repos/{id}/resync` (`repointel.Indexer`; checked against the TS index table by table); `POST /settings/test-connection`. All 40 routes are ported.
-6. **In progress:** ✅ Migrations and seed in Go (`internal/migrate`, compatible with Drizzle's bookkeeping; `internal/seed`; `cmd/db`). ✅ `scripts/dev.sh`, `scripts/e2e.sh` and the `e2e web` workflow run the Go server (`dev.sh --ts-api` runs the TS one, for the parity test). Removing `server/` and `reviewer-core/` waits for the owner's go-ahead: keep them until then.
+6. **In progress:** ✅ Migrations and seed in Go (`internal/migrate`, compatible with Drizzle's bookkeeping; `internal/seed`; `cmd/db`). ✅ The migrations moved to `api/migrations` (embedded); the TS server points there. ✅ `scripts/dev.sh`, `scripts/e2e.sh` and the `e2e web` workflow run the Go server (`dev.sh --ts-api` runs the TS one, for the parity test). Don't delete `server/`: the owner keeps it as the reference. Removing `reviewer-core/` and the TS workflows waits for the owner's go-ahead.

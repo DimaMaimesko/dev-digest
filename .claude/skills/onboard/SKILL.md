@@ -181,7 +181,7 @@ Routes in `src/app/**/page.tsx`: `/`, `/onboarding`, `/repos/[repoId]/pulls`,
 colocated in `_components/<Name>/` with a sibling `*.test.tsx`. Shell/nav in
 `src/components/app-shell`, diff UI in `src/components/diff-viewer`.
 
-### Data model (`server/src/db/schema/*.ts`, migrations in `server/src/db/migrations`)
+### Data model (`server/src/db/schema/*.ts`, migrations in `api/migrations`)
 
 The schema already contains **every** course table; many are empty in the
 starter. Group them by file (`core`, `repos`, `pulls`, `agents`, `reviews`,

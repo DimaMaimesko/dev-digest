@@ -6,8 +6,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +16,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/migrate"
+	"github.com/DimaMaimesko/dev-digest/api/migrations"
 )
 
 // template is the database every test database is copied from.
@@ -118,15 +117,8 @@ func start(ctx context.Context) error {
 	}
 	defer conn.Close(ctx)
 	// With internal/migrate, as the API's databases are.
-	_, err = migrate.Run(ctx, conn, migrationsDir())
+	_, err = migrate.Run(ctx, conn, migrations.FS)
 	return err
-}
-
-// migrationsDir finds the Drizzle migrations from this source file, so it
-// works from any package's test directory.
-func migrationsDir() string {
-	_, file, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(file), "..", "..", "..", "server", "src", "db", "migrations")
 }
 
 // withDatabase returns u with its database name replaced.

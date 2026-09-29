@@ -4,16 +4,15 @@
 //	go run ./cmd/db seed      # add the default workspace, settings and agents
 //
 // It connects to DATABASE_URL (default: the docker-compose database). The
-// migrations are Drizzle's, in ../server/src/db/migrations from api/, or the
-// folder in -dir or MIGRATIONS_DIR. A database the TS server migrated or
-// seeded continues where it left off.
+// migrations, from api/migrations, are built into the binary, so it runs from
+// any directory. A database the TS server migrated or seeded continues where
+// it left off.
 package main
 
 import (
 	"cmp"
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -23,6 +22,7 @@ import (
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/migrate"
 	"github.com/DimaMaimesko/dev-digest/api/internal/seed"
+	"github.com/DimaMaimesko/dev-digest/api/migrations"
 )
 
 func main() {
@@ -34,17 +34,11 @@ func main() {
 	}
 }
 
-const usage = "usage: db migrate [-dir DIR] | db seed"
+const usage = "usage: db migrate | db seed"
 
 func run(ctx context.Context, args []string, getenv func(string) string, out io.Writer) error {
-	if len(args) == 0 {
+	if len(args) != 1 {
 		return errors.New(usage)
-	}
-	flags := flag.NewFlagSet("db "+args[0], flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	dir := flags.String("dir", cmp.Or(getenv("MIGRATIONS_DIR"), "../server/src/db/migrations"), "the migrations folder")
-	if err := flags.Parse(args[1:]); err != nil {
-		return fmt.Errorf("%w\n%s", err, usage)
 	}
 	url := cmp.Or(getenv("DATABASE_URL"), "postgres://devdigest:devdigest@localhost:5433/devdigest")
 
@@ -55,7 +49,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, out io.
 			return err
 		}
 		defer conn.Close(ctx)
-		applied, err := migrate.Run(ctx, conn, *dir)
+		applied, err := migrate.Run(ctx, conn, migrations.FS)
 		if err != nil {
 			return err
 		}

@@ -2,9 +2,8 @@
 # gofmt, go vet, staticcheck and the race-enabled tests. Database tests start
 # Postgres with testcontainers, using the runner's Docker.
 #
-# server/src/db/migrations/** is in the path filter because the tests and sqlc
-# read the schema from the TS server's migrations; docs/agent-prompts/**
-# because a test keeps the seed's embedded prompts equal to them.
+# docs/agent-prompts/** is in the path filter because a test keeps the seed's
+# embedded prompts equal to them.
 name: api
 
 on:
@@ -12,13 +11,11 @@ on:
     branches: [main]
     paths:
       - 'api/**'
-      - 'server/src/db/migrations/**'
       - 'docs/agent-prompts/**'
       - '.github/workflows/api.yml'
   pull_request:
     paths:
       - 'api/**'
-      - 'server/src/db/migrations/**'
       - 'docs/agent-prompts/**'
       - '.github/workflows/api.yml'
 
