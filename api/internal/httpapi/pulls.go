@@ -126,32 +126,15 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request) {
 // changed files and commits. With a GitHub token they are fetched again and
 // saved first; the answer always comes from the database.
 func (s *Server) getPull(w http.ResponseWriter, r *http.Request) {
-	id, ok := pathID(w, r)
+	p, repo, ok := s.pullAndRepo(w, r)
 	if !ok {
 		return
 	}
-	p, err := s.queries.GetPull(r.Context(), postgres.GetPullParams{WorkspaceID: s.workspace, ID: id})
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "not_found", "Pull request not found")
-		return
-	}
-	if err != nil {
-		s.internalError(w, r, err)
-		return
-	}
-	repo, err := s.queries.GetRepo(r.Context(), postgres.GetRepoParams{WorkspaceID: s.workspace, ID: p.RepoID})
-	if errors.Is(err, pgx.ErrNoRows) {
-		writeError(w, http.StatusNotFound, "not_found", "Repo not found")
-		return
-	}
-	if err != nil {
-		s.internalError(w, r, err)
-		return
-	}
 	if gh := s.githubForRead(r); gh != nil {
-		if err := s.pulls.Refresh(r.Context(), gh, repo, p.Number); err != nil {
+		var err error
+		if err = s.pulls.Refresh(r.Context(), gh, repo, p.Number); err != nil {
 			s.log.Warn("GitHub refresh skipped; serving the saved pull request", "repo", repo.FullName, "number", p.Number, "err", err)
-		} else if p, err = s.queries.GetPull(r.Context(), postgres.GetPullParams{WorkspaceID: s.workspace, ID: id}); err != nil {
+		} else if p, err = s.queries.GetPull(r.Context(), postgres.GetPullParams{WorkspaceID: s.workspace, ID: p.ID}); err != nil {
 			s.internalError(w, r, err)
 			return
 		}
@@ -273,6 +256,35 @@ func (s *Server) githubForRead(r *http.Request) *github.Client {
 		return nil
 	}
 	return gh
+}
+
+// pullAndRepo reads the {id} of a pull request in the workspace, and its
+// repository. When the ID is invalid or either is missing, it answers and
+// returns false.
+func (s *Server) pullAndRepo(w http.ResponseWriter, r *http.Request) (postgres.PullRequest, postgres.Repo, bool) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return postgres.PullRequest{}, postgres.Repo{}, false
+	}
+	p, err := s.queries.GetPull(r.Context(), postgres.GetPullParams{WorkspaceID: s.workspace, ID: id})
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "not_found", "Pull request not found")
+		return postgres.PullRequest{}, postgres.Repo{}, false
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return postgres.PullRequest{}, postgres.Repo{}, false
+	}
+	repo, err := s.queries.GetRepo(r.Context(), postgres.GetRepoParams{WorkspaceID: s.workspace, ID: p.RepoID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "not_found", "Repo not found")
+		return postgres.PullRequest{}, postgres.Repo{}, false
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return postgres.PullRequest{}, postgres.Repo{}, false
+	}
+	return p, repo, true
 }
 
 // staleAfter is how long a reviewed pull request can go without changes

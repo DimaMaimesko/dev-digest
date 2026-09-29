@@ -73,7 +73,7 @@ func TestFallbackForwardsUnportedRoutes(t *testing.T) {
 	api := goServer(t, ts.URL)
 
 	tests := []struct{ name, method, path, body string }{
-		{"a GET route not ported yet", http.MethodGet, "/pulls/abc/comments?page=2", ""},
+		{"a GET route not ported", http.MethodGet, "/not-ported/abc?page=2", ""},
 		// Only GET /repos is ported; POST /repos still belongs to TS.
 		{"another method on a ported path", http.MethodPost, "/repos", `{"url": "https://github.com/o/r"}`},
 	}
@@ -123,11 +123,11 @@ func TestFallbackTSUnreachable(t *testing.T) {
 	down := httptest.NewServer(http.NotFoundHandler())
 	down.Close() // nothing listens at its address now
 
-	res := send(t, http.MethodGet, goServer(t, down.URL).URL+"/pulls/abc/comments", "")
+	res := send(t, http.MethodGet, goServer(t, down.URL).URL+"/not-ported/abc", "")
 	body, _ := io.ReadAll(res.Body)
 	if res.StatusCode != http.StatusBadGateway ||
 		!strings.Contains(string(body), `"code":"upstream_unavailable"`) ||
-		!strings.Contains(string(body), "GET /pulls/abc/comments") {
+		!strings.Contains(string(body), "GET /not-ported/abc") {
 		t.Errorf("got %d %s", res.StatusCode, body)
 	}
 }

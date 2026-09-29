@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,13 +12,13 @@ import (
 )
 
 // fakeGitHub serves GitHub's API for repository o/n: pull request 7, which
-// is also listed, and pull request 8, which is new. Every answer is status
-// when that is set.
+// is also listed, with a review comment, and pull request 8, which is new.
+// Every answer is status when that is set.
 type fakeGitHub struct {
 	status int
 
 	mu       sync.Mutex
-	requests []string
+	requests []string // "/path", or "POST /path body" for a POST
 }
 
 var githubAnswers = map[string]string{
@@ -36,17 +37,38 @@ var githubAnswers = map[string]string{
 	"/repos/o/n/pulls/7/files": `[{"filename": "limit.go", "additions": 40, "deletions": 4, "patch": "@@ -1 +1 @@"}]`,
 	"/repos/o/n/pulls/7/commits": `[{"sha": "new", "commit": {"message": "Add limits",
 		"author": {"name": "Ann", "date": "2026-09-03T00:00:00Z"}}, "author": {"login": "ann"}}]`,
+	"/repos/o/n/pulls/7/comments": `[
+		{"id": 1, "path": "limit.go", "line": 11, "original_line": 11, "side": "RIGHT", "body": "Why?",
+		 "user": {"login": "bob"}, "created_at": "2026-09-03T10:00:00Z", "html_url": "https://github.com/o/n/pull/7#discussion_r1"},
+		{"id": 2, "path": "limit.go", "line": null, "original_line": 4, "side": "LEFT", "body": "Old",
+		 "user": null, "created_at": "2026-09-03T11:00:00Z", "html_url": "https://github.com/o/n/pull/7#discussion_r2",
+		 "in_reply_to_id": 1}]`,
+	"POST /repos/o/n/pulls/7/comments":                       postedComment,
+	"POST /repos/o/n/pulls/7/comments/1234567890123/replies": postedComment,
 }
 
+const postedComment = `{"id": 3, "path": "limit.go", "line": 12, "original_line": 12, "side": "RIGHT",
+	"body": "Use a constant.", "user": {"login": "me"}, "created_at": "2026-09-04T00:00:00Z",
+	"html_url": "https://github.com/o/n/pull/7#discussion_r3"}`
+
 func (g *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	key := r.URL.Path
+	if r.Method != http.MethodGet {
+		key = r.Method + " " + key
+	}
+	sent, _ := io.ReadAll(r.Body)
 	g.mu.Lock()
-	g.requests = append(g.requests, r.URL.Path)
+	g.requests = append(g.requests, strings.TrimSpace(key+" "+string(sent)))
 	g.mu.Unlock()
 	if g.status != 0 {
-		http.Error(w, `{"message": "Bad credentials"}`, g.status)
+		message := "Bad credentials"
+		if g.status == http.StatusUnprocessableEntity {
+			message = "Validation Failed"
+		}
+		http.Error(w, `{"message": "`+message+`"}`, g.status)
 		return
 	}
-	body, ok := githubAnswers[r.URL.Path]
+	body, ok := githubAnswers[key]
 	if !ok {
 		http.Error(w, `{"message": "Not Found"}`, http.StatusNotFound)
 		return

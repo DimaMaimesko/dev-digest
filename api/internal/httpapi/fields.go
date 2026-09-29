@@ -102,6 +102,26 @@ func (f *fields) int32(key string) *int32 {
 	return &v
 }
 
+// maxSafeInt is the largest whole number a JavaScript number holds exactly,
+// the limit of Zod's int().
+const maxSafeInt = 1<<53 - 1
+
+// whole reads a whole number that JavaScript holds exactly, such as a GitHub
+// ID.
+func (f *fields) whole(key string, required bool) *int64 {
+	if !f.present(key, required) {
+		return nil
+	}
+	var n float64
+	if isNull(f.body[key]) || json.Unmarshal(f.body[key], &n) != nil ||
+		n != math.Trunc(n) || math.Abs(n) > maxSafeInt {
+		f.bad("Expected a whole number", key)
+		return nil
+	}
+	v := int64(n)
+	return &v
+}
+
 // anyJSON reads a value of any JSON type, null included, unchanged.
 func (f *fields) anyJSON(key string) json.RawMessage {
 	return f.body[key]

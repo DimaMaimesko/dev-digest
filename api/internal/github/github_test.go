@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -19,6 +20,7 @@ type fakeGitHub struct {
 	mu       sync.Mutex
 	answers  map[string][]string // by path and query
 	requests []*http.Request
+	bodies   []string
 }
 
 func newFake(t *testing.T, answers map[string][]string) (*Client, *fakeGitHub) {
@@ -35,6 +37,8 @@ func (f *fakeGitHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, r)
+	sent, _ := io.ReadAll(r.Body)
+	f.bodies = append(f.bodies, string(sent))
 	queue := f.answers[r.URL.RequestURI()]
 	if len(queue) == 0 {
 		http.Error(w, `{"message": "Not Found"}`, http.StatusNotFound)
@@ -232,5 +236,87 @@ func TestTimeout(t *testing.T) {
 	}
 	if d := time.Since(start); d > 5*time.Second {
 		t.Errorf("took %v", d)
+	}
+}
+
+func TestPullComments(t *testing.T) {
+	c, _ := newFake(t, map[string][]string{
+		"/repos/acme/w/pulls/7/comments?per_page=100": {`200 [
+			{"id": 1, "path": "a.go", "line": 11, "original_line": 10, "side": "RIGHT", "body": "Why?",
+			 "user": {"login": "ann"}, "created_at": "2026-06-01T00:00:00Z", "html_url": "https://x/1"},
+			{"id": 2, "path": "a.go", "line": null, "original_line": 3, "side": "LEFT", "body": "Old",
+			 "user": null, "created_at": "2026-06-02T00:00:00Z", "html_url": "https://x/2", "in_reply_to_id": 1},
+			{"id": 3, "path": "b.go", "body": "No side", "created_at": "2026-06-03T00:00:00Z", "html_url": "https://x/3"}]`},
+	})
+	got, err := c.PullComments(context.Background(), "acme", "w", 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Comment{
+		{ID: 1, Path: "a.go", Line: new(11), OriginalLine: new(10), Side: "RIGHT", Body: "Why?", User: "ann",
+			CreatedAt: date("2026-06-01T00:00:00Z"), HTMLURL: "https://x/1"},
+		{ID: 2, Path: "a.go", OriginalLine: new(3), Side: "LEFT", Body: "Old", User: "unknown",
+			CreatedAt: date("2026-06-02T00:00:00Z"), HTMLURL: "https://x/2", InReplyTo: new(int64(1))},
+		{ID: 3, Path: "b.go", Side: "RIGHT", Body: "No side", User: "unknown",
+			CreatedAt: date("2026-06-03T00:00:00Z"), HTMLURL: "https://x/3"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("PullComments =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
+const created = `201 {"id": 9, "path": "a.go", "line": 11, "side": "RIGHT", "body": "Hi",
+	"user": {"login": "me"}, "created_at": "2026-06-01T00:00:00Z", "html_url": "https://x/9"}`
+
+func TestCreateComment(t *testing.T) {
+	c, f := newFake(t, map[string][]string{"/repos/acme/w/pulls/7/comments": {created}})
+	got, err := c.CreateComment(context.Background(), "acme", "w", 7,
+		NewComment{CommitSHA: "abc", Path: "a.go", Line: 11, Side: "RIGHT", Body: "Hi"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ID != 9 || got.User != "me" {
+		t.Errorf("comment = %+v", got)
+	}
+	req := f.requests[0]
+	if req.Method != http.MethodPost || req.Header.Get("Content-Type") != "application/json" {
+		t.Errorf("sent %s with Content-Type %q", req.Method, req.Header.Get("Content-Type"))
+	}
+	if want := `{"commit_id":"abc","path":"a.go","line":11,"side":"RIGHT","body":"Hi"}`; f.bodies[0] != want {
+		t.Errorf("body = %s, want %s", f.bodies[0], want)
+	}
+}
+
+func TestReplyToComment(t *testing.T) {
+	c, f := newFake(t, map[string][]string{"/repos/acme/w/pulls/7/comments/1234567890123/replies": {created}})
+	if _, err := c.ReplyToComment(context.Background(), "acme", "w", 7, 1234567890123, "Agreed"); err != nil {
+		t.Fatal(err)
+	}
+	if f.requests[0].Method != http.MethodPost || f.bodies[0] != `{"body":"Agreed"}` {
+		t.Errorf("sent %s %s", f.requests[0].Method, f.bodies[0])
+	}
+}
+
+// A POST may have been done when GitHub fails, so only a rate limit, which
+// means it wasn't, is retried.
+func TestPostRetries(t *testing.T) {
+	tests := []struct {
+		name     string
+		answers  []string
+		requests int
+		ok       bool
+	}{
+		{"rate limited, then created", []string{`429 {"message": "slow down"}`, created}, 2, true},
+		{"server error isn't retried", []string{`502 bad gateway`, created}, 1, false},
+		{"validation error", []string{`422 {"message": "Validation Failed"}`}, 1, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, f := newFake(t, map[string][]string{"/repos/acme/w/pulls/7/comments": tt.answers})
+			_, err := c.CreateComment(context.Background(), "acme", "w", 7, NewComment{Path: "a.go", Line: 1, Body: "x"})
+			if f.count() != tt.requests || (err == nil) != tt.ok {
+				t.Errorf("%d requests, err %v; want %d, ok %v", f.count(), err, tt.requests, tt.ok)
+			}
+		})
 	}
 }

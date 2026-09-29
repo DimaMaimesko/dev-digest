@@ -43,50 +43,11 @@ import (
 //
 // PARITY_DATABASE_URL defaults to the dev database from docker-compose.yml.
 func TestParityWithTypeScript(t *testing.T) {
-	tsURL := os.Getenv("PARITY_TS_URL")
-	if tsURL == "" {
-		t.Skip("set PARITY_TS_URL to the running TS server, e.g. http://localhost:3001")
-	}
-	dbURL := os.Getenv("PARITY_DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://devdigest:devdigest@localhost:5433/devdigest"
-	}
-	ctx := context.Background()
-	db, err := pgxpool.New(ctx, dbURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	workspace, err := postgres.New(db).WorkspaceByName(ctx, "default")
-	if err != nil {
-		t.Fatalf("find the default workspace: %v", err)
-	}
-	// Give the Go handler the settings the TS process has: its environment
-	// plus server/.env, with relative paths resolved against server/.
-	getenv := tsEnv(t)
-	cloneDir := filepath.Join(serverDir(), "clones")
-	if v := getenv("DEVDIGEST_CLONE_DIR"); filepath.IsAbs(v) {
-		cloneDir = v
-	} else if v != "" {
-		cloneDir = filepath.Join(serverDir(), v)
-	}
-	home, _ := os.UserHomeDir()
-	user, err := postgres.New(db).UserByEmail(ctx, "you@local")
-	if err != nil {
-		t.Fatalf("find the local user: %v", err)
-	}
+	tsURL, cfg := parityConfig(t)
 	// No GitHubAPI: the Go handler serves what the TS server has just synced
 	// and never writes to the dev database itself. The Go GitHub client is
 	// checked by TestGitHubClientWithTypeScript.
-	goAPI := httptest.NewServer(httpapi.New(httpapi.Config{
-		DB:        db,
-		Workspace: workspace,
-		User:      user,
-		WebOrigin: webOrigin,
-		CloneDir:  cloneDir,
-		Secrets:   secrets.New(filepath.Join(home, ".devdigest", "secrets.json"), getenv),
-		Log:       quiet,
-	}).Handler())
+	goAPI := httptest.NewServer(httpapi.New(cfg).Handler())
 	defer goAPI.Close()
 
 	// compare checks path on both servers. Keys in ignore are TS-only fields
@@ -127,6 +88,7 @@ func TestParityWithTypeScript(t *testing.T) {
 	compare("/pulls/" + missing + "/reviews")
 	compare("/pulls/" + missing + "/runs")
 	compare("/pulls/" + missing + "/runs/active")
+	compare("/pulls/" + missing + "/comments")
 	compare("/runs/" + missing + "/trace")
 	repos, _ := compare("/repos").([]any)
 	for _, repo := range repos {
@@ -144,10 +106,10 @@ func TestParityWithTypeScript(t *testing.T) {
 		}
 	}
 
-	// Writes that change nothing: an empty settings update, invalid bodies,
-	// and missing agents, findings, reviews and runs. For an error, the
-	// status, code and message must match; the details are Zod's in TS and
-	// simpler in Go.
+	// Requests that change nothing: an empty settings update, invalid bodies
+	// and IDs, and missing agents, findings, reviews, runs, repositories and
+	// pull requests. None reaches GitHub. For an error, the status, code and
+	// message must match; the details are Zod's in TS and simpler in Go.
 	type write struct{ method, path, body string }
 	writes := []write{
 		{http.MethodPost, "/agents", `{}`},
@@ -163,6 +125,11 @@ func TestParityWithTypeScript(t *testing.T) {
 		{http.MethodDelete, "/runs/" + missing, `{}`},
 		{http.MethodPost, "/repos/" + missing + "/poll", `{}`},
 		{http.MethodPost, "/repos/42/poll", `{}`},
+		{http.MethodPost, "/pulls/" + missing + "/comments", `{"path": "a.go", "line": 1, "body": "x"}`},
+		{http.MethodPost, "/pulls/" + missing + "/comments", `{}`},
+		{http.MethodPost, "/pulls/" + missing + "/comments", `{"path": "a.go", "line": 0, "body": ""}`},
+		{http.MethodPost, "/pulls/42/comments", `{"path": "a.go", "line": 1, "body": "x"}`},
+		{http.MethodGet, "/pulls/42/comments", ``},
 	}
 	for _, body := range []string{`{}`, `{"theme": "blue"}`, `{"polling_interval_min": 0}`, `[1]`, `null`} {
 		writes = append(writes, write{http.MethodPut, "/settings", body})
@@ -203,16 +170,12 @@ func TestParityWithTypeScript(t *testing.T) {
 // TestGitHubClientWithTypeScript checks the Go GitHub client against the TS
 // server's Octokit client: for up to 3 pull requests of each repository, the
 // detail the TS server has just fetched from GitHub must equal what the Go
-// client reads, and each pull request in GitHub's list must match the TS
-// server's list. It only reads, from GitHub and from the TS server. It runs
+// client reads, and so must the review comments; each pull request in
+// GitHub's list must match the TS server's list. It only reads, from GitHub and from the TS server. It runs
 // when PARITY_TS_URL is set and a GitHub token is configured.
 func TestGitHubClientWithTypeScript(t *testing.T) {
-	tsURL := os.Getenv("PARITY_TS_URL")
-	if tsURL == "" {
-		t.Skip("set PARITY_TS_URL to the running TS server, e.g. http://localhost:3001")
-	}
-	home, _ := os.UserHomeDir()
-	token, err := secrets.New(filepath.Join(home, ".devdigest", "secrets.json"), tsEnv(t)).Get(secrets.GitHubToken)
+	tsURL, cfg := parityConfig(t)
+	token, err := cfg.Secrets.Get(secrets.GitHubToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,6 +184,11 @@ func TestGitHubClientWithTypeScript(t *testing.T) {
 	}
 	gh := github.New(github.DefaultURL, token)
 	ctx := context.Background()
+	// With GitHub on, used only for the comments, which it reads from GitHub
+	// without writing to the database.
+	cfg.GitHubAPI = github.DefaultURL
+	goAPI := httptest.NewServer(httpapi.New(cfg).Handler())
+	defer goAPI.Close()
 
 	_, repos := fetchJSON(t, tsURL+"/repos")
 	for _, repo := range repos.([]any) {
@@ -274,6 +242,12 @@ func TestGitHubClientWithTypeScript(t *testing.T) {
 					tj, _ := json.MarshalIndent(tsDetail, "", "  ")
 					gj, _ := json.MarshalIndent(goDetail, "", "  ")
 					t.Errorf("details differ\nTS:\n%s\nGo:\n%s", tj, gj)
+				}
+
+				_, tsComments := fetchJSON(t, tsURL+"/pulls/"+id+"/comments")
+				_, goComments := fetchJSON(t, goAPI.URL+"/pulls/"+id+"/comments")
+				if !reflect.DeepEqual(normalize(tsComments), normalize(goComments)) {
+					t.Errorf("comments differ\nTS: %v\nGo: %v", tsComments, goComments)
 				}
 			})
 		}
@@ -329,6 +303,54 @@ func githubDetail(t *testing.T, gh *github.Client, owner, name string, number in
 		t.Fatal(err)
 	}
 	return v
+}
+
+// parityConfig returns the running TS server's URL, from PARITY_TS_URL, and
+// the config for a Go handler with the same database and settings. It skips
+// the test when PARITY_TS_URL isn't set.
+func parityConfig(t *testing.T) (string, httpapi.Config) {
+	t.Helper()
+	tsURL := os.Getenv("PARITY_TS_URL")
+	if tsURL == "" {
+		t.Skip("set PARITY_TS_URL to the running TS server, e.g. http://localhost:3001")
+	}
+	dbURL := os.Getenv("PARITY_DATABASE_URL")
+	if dbURL == "" {
+		dbURL = "postgres://devdigest:devdigest@localhost:5433/devdigest"
+	}
+	ctx := context.Background()
+	db, err := pgxpool.New(ctx, dbURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(db.Close)
+	workspace, err := postgres.New(db).WorkspaceByName(ctx, "default")
+	if err != nil {
+		t.Fatalf("find the default workspace: %v", err)
+	}
+	user, err := postgres.New(db).UserByEmail(ctx, "you@local")
+	if err != nil {
+		t.Fatalf("find the local user: %v", err)
+	}
+	// The settings the TS process has: its environment plus server/.env,
+	// with relative paths resolved against server/.
+	getenv := tsEnv(t)
+	cloneDir := filepath.Join(serverDir(), "clones")
+	if v := getenv("DEVDIGEST_CLONE_DIR"); filepath.IsAbs(v) {
+		cloneDir = v
+	} else if v != "" {
+		cloneDir = filepath.Join(serverDir(), v)
+	}
+	home, _ := os.UserHomeDir()
+	return tsURL, httpapi.Config{
+		DB:        db,
+		Workspace: workspace,
+		User:      user,
+		WebOrigin: webOrigin,
+		CloneDir:  cloneDir,
+		Secrets:   secrets.New(filepath.Join(home, ".devdigest", "secrets.json"), getenv),
+		Log:       quiet,
+	}
 }
 
 // serverDir is the TS server's directory, its working directory when running.

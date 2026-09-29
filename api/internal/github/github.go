@@ -1,7 +1,9 @@
-// Package github reads pull requests from GitHub's REST API.
+// Package github reads pull requests from GitHub's REST API and posts
+// review comments on them.
 package github
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -205,18 +207,125 @@ func (c *Client) PullCommits(ctx context.Context, owner, repo string, number int
 	return commits, nil
 }
 
+// Comment is a review comment on a line of a pull request's diff.
+type Comment struct {
+	ID           int64
+	Path         string
+	Line         *int // nil when the line is no longer in the diff
+	OriginalLine *int
+	Side         string // LEFT (the old file) or RIGHT (the new one)
+	Body         string
+	User         string // the login, or "unknown" for a deleted account
+	CreatedAt    time.Time
+	HTMLURL      string
+	InReplyTo    *int64 // the thread's first comment, for a reply
+}
+
+type commentJSON struct {
+	ID           int64   `json:"id"`
+	Path         string  `json:"path"`
+	Line         *int    `json:"line"`
+	OriginalLine *int    `json:"original_line"`
+	Side         *string `json:"side"`
+	Body         string  `json:"body"`
+	User         *struct {
+		Login string `json:"login"`
+	} `json:"user"`
+	CreatedAt   time.Time `json:"created_at"`
+	HTMLURL     string    `json:"html_url"`
+	InReplyToID *int64    `json:"in_reply_to_id"`
+}
+
+func (c commentJSON) comment() Comment {
+	out := Comment{
+		ID: c.ID, Path: c.Path, Line: c.Line, OriginalLine: c.OriginalLine, Side: "RIGHT",
+		Body: c.Body, User: "unknown", CreatedAt: c.CreatedAt, HTMLURL: c.HTMLURL, InReplyTo: c.InReplyToID,
+	}
+	if c.Side != nil && *c.Side == "LEFT" {
+		out.Side = "LEFT"
+	}
+	if c.User != nil {
+		out.User = c.User.Login
+	}
+	return out
+}
+
+// PullComments returns the first 100 review comments of a pull request.
+func (c *Client) PullComments(ctx context.Context, owner, repo string, number int) ([]Comment, error) {
+	var page []commentJSON
+	if err := c.get(ctx, fmt.Sprintf("%s/pulls/%d/comments?per_page=100", repoPath(owner, repo), number), &page); err != nil {
+		return nil, err
+	}
+	comments := make([]Comment, len(page))
+	for i, cm := range page {
+		comments[i] = cm.comment()
+	}
+	return comments, nil
+}
+
+// NewComment is a review comment to post on a line of a pull request's diff.
+type NewComment struct {
+	CommitSHA string // the commit whose diff the line is in
+	Path      string
+	Line      int
+	Side      string // LEFT or RIGHT
+	Body      string
+}
+
+// CreateComment posts a review comment that starts a thread.
+func (c *Client) CreateComment(ctx context.Context, owner, repo string, number int, in NewComment) (Comment, error) {
+	req := struct {
+		CommitID string `json:"commit_id"`
+		Path     string `json:"path"`
+		Line     int    `json:"line"`
+		Side     string `json:"side"`
+		Body     string `json:"body"`
+	}{in.CommitSHA, in.Path, in.Line, in.Side, in.Body}
+	var out commentJSON
+	if err := c.send(ctx, http.MethodPost, fmt.Sprintf("%s/pulls/%d/comments", repoPath(owner, repo), number), req, &out); err != nil {
+		return Comment{}, err
+	}
+	return out.comment(), nil
+}
+
+// ReplyToComment posts body as a reply in the thread of comment to.
+func (c *Client) ReplyToComment(ctx context.Context, owner, repo string, number int, to int64, body string) (Comment, error) {
+	req := struct {
+		Body string `json:"body"`
+	}{body}
+	var out commentJSON
+	path := fmt.Sprintf("%s/pulls/%d/comments/%d/replies", repoPath(owner, repo), number, to)
+	if err := c.send(ctx, http.MethodPost, path, req, &out); err != nil {
+		return Comment{}, err
+	}
+	return out.comment(), nil
+}
+
 func repoPath(owner, repo string) string {
 	return "/repos/" + url.PathEscape(owner) + "/" + url.PathEscape(repo)
 }
 
-// get sends a GET request for path and decodes the JSON answer into out. It
-// retries rate limits, server errors and network errors, waiting longer each
-// time.
+// get sends a GET request for path and decodes the JSON answer into out.
 func (c *Client) get(ctx context.Context, path string, out any) error {
+	return c.send(ctx, http.MethodGet, path, nil, out)
+}
+
+// send sends a request with in, when not nil, as its JSON body, and decodes
+// the JSON answer into out. It retries rate limits, waiting longer each
+// time. A GET is also retried after a server or network error; a POST isn't,
+// since GitHub may have done it already.
+func (c *Client) send(ctx context.Context, method, path string, in, out any) error {
+	var body []byte
+	if in != nil {
+		var err error
+		if body, err = json.Marshal(in); err != nil {
+			return err
+		}
+	}
 	delay := c.retryDelay
 	for attempt := 0; ; attempt++ {
-		err := c.getOnce(ctx, path, out)
-		if err == nil || attempt == c.retries || !retryable(ctx, err) {
+		err := c.sendOnce(ctx, method, path, body, out)
+		if err == nil || attempt == c.retries || !retryable(ctx, err, method) {
 			return err
 		}
 		select {
@@ -228,12 +337,15 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	}
 }
 
-func (c *Client) getOnce(ctx context.Context, path string, out any) error {
+func (c *Client) sendOnce(ctx context.Context, method, path string, body []byte, out any) error {
 	ctx, cancel := context.WithTimeout(ctx, c.timeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, bytes.NewReader(body))
 	if err != nil {
 		return err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", "Bearer "+c.token)
@@ -249,7 +361,7 @@ func (c *Client) getOnce(ctx context.Context, path string, out any) error {
 	if err != nil {
 		return fmt.Errorf("read GitHub's answer: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return &StatusError{Code: resp.StatusCode, Message: errorMessage(data)}
 	}
 	if err := json.Unmarshal(data, out); err != nil {
@@ -283,15 +395,17 @@ func errorMessage(body []byte) string {
 	return msg
 }
 
-// retryable reports whether trying the same request again may succeed.
-func retryable(ctx context.Context, err error) bool {
+// retryable reports whether trying the same request again may succeed, and
+// is safe: only a GET is repeated after an error that may come after GitHub
+// did the work.
+func retryable(ctx context.Context, err error, method string) bool {
 	if ctx.Err() != nil {
 		return false // cancelled, or out of time
 	}
 	var status *StatusError
 	if errors.As(err, &status) {
-		return status.Code == http.StatusTooManyRequests || status.Code >= 500
+		return status.Code == http.StatusTooManyRequests || (status.Code >= 500 && method == http.MethodGet)
 	}
 	var netErr net.Error
-	return errors.As(err, &netErr)
+	return errors.As(err, &netErr) && method == http.MethodGet
 }
