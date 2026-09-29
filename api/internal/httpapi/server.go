@@ -21,6 +21,7 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/agents"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
 	"github.com/DimaMaimesko/dev-digest/api/internal/pulls"
+	"github.com/DimaMaimesko/dev-digest/api/internal/repos"
 	"github.com/DimaMaimesko/dev-digest/api/internal/runner"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
@@ -41,6 +42,7 @@ type Server struct {
 	githubAPI string
 	modelAPIs ModelAPIs
 	runner    *runner.Runner
+	repos     *repos.Store
 }
 
 // Config is what a Server needs.
@@ -67,6 +69,9 @@ type Config struct {
 	// Runner runs reviews. Without one, the review, events and cancel
 	// routes are left to the TS server.
 	Runner *runner.Runner
+	// Repos adds, refreshes and removes repositories. Without it, those
+	// routes are left to the TS server.
+	Repos *repos.Store
 }
 
 // New returns a Server.
@@ -86,6 +91,7 @@ func New(cfg Config) *Server {
 		githubAPI: cfg.GitHubAPI,
 		modelAPIs: cfg.ModelAPIs,
 		runner:    cfg.Runner,
+		repos:     cfg.Repos,
 	}
 }
 
@@ -121,6 +127,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /pulls/{id}/runs", s.listRuns)
 	mux.HandleFunc("GET /pulls/{id}/runs/active", s.listActiveRuns)
 	mux.HandleFunc("GET /runs/{id}/trace", s.getRunTrace)
+	if s.repos != nil {
+		mux.HandleFunc("POST /repos", s.addRepo)
+		mux.HandleFunc("POST /repos/{id}/refresh", s.refreshRepo)
+		mux.HandleFunc("DELETE /repos/{id}", s.deleteRepo)
+	}
 	if s.runner != nil {
 		mux.HandleFunc("POST /pulls/{id}/review", s.startReview)
 		mux.HandleFunc("GET /runs/{id}/events", s.runEvents)

@@ -6,11 +6,15 @@ Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
 **Status:** phases 1 and 2 of 6 are done. The review engine runs from the
 command line, and the HTTP API serves all 22 of the TS server's `GET` routes,
-and runs reviews: 35 of its 40 routes are ported, and the other 5 can be
-forwarded to it. They match the TS server on the dev database (see the parity
-test below). Left on the TS server: adding, refreshing and deleting a
-repository and indexing it (phase 5), and `POST /settings/test-connection`,
-which must wait for those (see "Writes ported so far"). With a GitHub token, reading pull
+runs reviews, and adds, refreshes and deletes repositories: 38 of its 40
+routes are ported, and the other 2 can be forwarded to it. They match the TS
+server on the dev database (see the parity test below). Left on the TS
+server: `POST /repos/{id}/resync`, which indexes a repository, and
+`POST /settings/test-connection` (see "Writes ported so far").
+
+**Until the indexer is ported** (next), a repository added through the Go
+server is cloned but not indexed: its reviews have the callers section but
+no repository map or file ranks. The TS server indexed after each clone. With a GitHub token, reading pull
 requests first syncs them from GitHub, as in TS; without one, or when GitHub
 can't be reached, the saved ones are served.
 
@@ -58,10 +62,19 @@ schema, and saves all keys in one transaction.
 `POST /settings/test-connection` stays on the TS server for now, reached
 through the fallback proxy. It saves API keys to `~/.devdigest/secrets.json`,
 and the TS server reads that file once and caches it: a key saved by the Go
-server wouldn't reach the TS server until a restart. The reviews have moved,
-but adding a repository, still on the TS server, clones it with the cached
-`GITHUB_TOKEN`. The Go server re-reads the file on every use, so it sees keys
-the TS server saves. It moves with the repository routes (phase 5).
+server wouldn't reach the TS server until a restart. Resyncing a repository,
+still on the TS server, fetches with the cached `GITHUB_TOKEN`. The Go server
+re-reads the file on every use, so it sees keys the TS server saves. It
+moves after the indexer.
+
+**Repositories.** `POST /repos` adds a GitHub repository and clones it in the
+background (`internal/repos`, with the job runner `internal/jobs`);
+`POST /repos/{id}/refresh` fetches into the clone, and `DELETE /repos/{id}`
+removes the repository with its pull requests and reviews. The GitHub token
+goes to git as a header for each command and is never saved in a clone. A
+clone the TS server made has it saved in its remote's URL
+(`.git/config`); `git remote set-url origin https://github.com/<owner>/<name>.git`
+in the clone removes it.
 
 **Reviews.** `POST /pulls/{id}/review` starts a run per agent and answers at
 once; `internal/runner` runs them in the background, one after another, and
@@ -180,9 +193,11 @@ removed, they become plain regression fixtures.
 | `internal/agents` | Creating and changing agents, with their version history | `server/src/modules/agents/repository.ts`, `service.ts`, `helpers.ts` |
 | `internal/github` | Client for the parts of GitHub's REST API DevDigest uses (pull requests, their files, commits and review comments), written with `net/http`: retries rate limits, and server errors for reads, 30 s per request | `server/src/adapters/github/octokit.ts`, `platform/resilience.ts` |
 | `internal/anthropic` | Anthropic's API through the official Go SDK ([anthropic-sdk-go](https://github.com/anthropics/anthropic-sdk-go)): the model list, and `review.LLM`, which asks for the review as the input of a tool the model must call, as TS does. The SDK's own credential lookup is off: the key comes from `internal/secrets`, like the others. | `server/src/adapters/llm/anthropic.ts` |
-| `internal/git` | Runs `git` in a repository's clone; for now, the diff a review reads | `server/src/adapters/git/simple-git.ts` |
+| `internal/git` | Runs `git`: clone and fetch (a GitHub token goes in a header, never saved; never waits for a password), and the diff a review reads | `server/src/adapters/git/simple-git.ts` |
 | `internal/repointel` | A review's context from repo-intel: the repository map and file ranks, read from the index the TS server builds until phase 5; and the callers of the symbols a change declares, found in the clone: `ParseSymbols` parses TypeScript and JavaScript with tree-sitter, `References` finds the lines that use a symbol | `getRepoMap`, `getFileRank` and `getCallerSignatures` in `server/src/modules/repo-intel/service.ts`, `parseSymbols` in `server/src/adapters/astgrep`, `extractReferences` in `server/src/adapters/codeindex/extract.ts` |
 | `internal/runner` | Runs reviews in the background: the diff (git, or the saved patches), the repo-intel context, the review engine, then the review, findings and trace saved in one transaction. Keeps each run's live log in memory for its followers. | `server/src/modules/reviews/run-executor.ts`, `service.ts`, `diff-loader.ts`, `platform/sse.ts`, `platform/run-logger.ts` |
+| `internal/repos` | Adding a GitHub repository from its URL, cloning it, refreshing and removing it | `server/src/modules/repos` |
+| `internal/jobs` | Runs slow work in the background, 3 at a time, 2 minutes each at most, and records each job in the `jobs` table | `server/src/platform/jobs.ts` |
 | `internal/pulls` | Saving pull requests from GitHub: the list, missing diff stats, one pull request with its files and commits | the sync code in `server/src/modules/pulls/routes.ts` and `polling/routes.ts` |
 | `internal/secrets` | API keys and tokens: `~/.devdigest/secrets.json` first, then the environment | `server/src/adapters/secrets/local.ts` |
 | `internal/pgtest` | A throwaway, migrated Postgres for tests: one container per test binary, one database per test | `server/test/helpers/pg.ts` |
@@ -328,6 +343,13 @@ provider at once, so it waits for a real need.
 | `POST /runs/{id}/cancel` of another workspace's run | Cancelled | Not |
 | The server stops during a review | The run stays "running" until the next start marks it failed | Marked failed at once: "the server stopped during the run" |
 | Rate limits (for example 10 reviews a minute) | Per route, per client | None yet |
+| Adding `https://github.com/../victim` | **Adds it, and the clone job deletes the directory `victim` next to the clone directory.** Reproduced in a temporary directory. With the clones in `server/clones`, `https://github.com/../src` would delete `server/src`. | 400: owner and name must follow GitHub's rules |
+| Adding `https://github.com/vercel/next.js` | 400: names with a dot are refused (reproduced) | Added |
+| Adding `https://evil.example/github.com/acme/widgets` | Read as `acme/widgets` (reproduced), and the clone job clones the URL as typed, from that host | 400: only github.com |
+| The GitHub token when cloning | **Saved in the clone**, in the remote's URL in `.git/config` (found in the dev-digest clone) | Sent as a header for each git command, not saved |
+| Two adds of one repository at once | The second is a 500 with Postgres's error (reproduced) | 201, then 200 |
+| A clone that needs a password and has no token | git may ask for one on the server's terminal | Fails at once |
+| `attempts` of a failed job | 0 | 1 |
 | A GitHub request times out | Not retried. The 30 s limit covers the whole detail fetch (3 to 4 requests). | Retried, like a server error. The limit is 30 s per request. |
 
 Kept as in TS, though odd:
@@ -347,6 +369,8 @@ Kept as in TS, though odd:
 - `POST /repos/{id}/poll` without a GitHub token is a 500 `config_error`.
 - The OpenAI model list keeps GPT models and names containing `o1` or `o3`,
   so `o4-mini` isn't offered.
+- Deleting a repository leaves its clone on disk; adding it again fetches
+  into it. Refreshing fetches, but doesn't move the checked-out commit.
 - `POST /runs/{id}/cancel` answers `{"ok": true}` for any run, even one that
   doesn't exist.
 - A reply (`in_reply_to`) still needs `path` and `line`, which GitHub

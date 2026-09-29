@@ -41,8 +41,10 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/anthropic"
 	"github.com/DimaMaimesko/dev-digest/api/internal/github"
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
+	"github.com/DimaMaimesko/dev-digest/api/internal/jobs"
 	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/repos"
 	"github.com/DimaMaimesko/dev-digest/api/internal/review"
 	"github.com/DimaMaimesko/dev-digest/api/internal/runner"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
@@ -110,6 +112,8 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		Log:       log,
 	})
 	defer reviews.Close() // after the server stops: the runs in progress end as failed
+	background := jobs.New(pool, log)
+	defer background.Close() // likewise for clones in progress
 	if n, err := reviews.FailStale(ctx); err != nil {
 		return fmt.Errorf("mark stale runs failed: %w", err)
 	} else if n > 0 {
@@ -129,6 +133,12 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			GitHubAPI: github.DefaultURL,
 			ModelAPIs: modelAPIs,
 			Runner:    reviews,
+			Repos: repos.NewStore(repos.Config{
+				DB:       pool,
+				Jobs:     background,
+				CloneDir: cfg.cloneDir,
+				Token:    func() (string, error) { return store.Get(secrets.GitHubToken) },
+			}),
 		}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

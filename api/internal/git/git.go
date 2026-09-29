@@ -4,8 +4,12 @@ package git
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 )
 
@@ -13,12 +17,63 @@ import (
 // since it left base, as a pull request shows it.
 func Diff(ctx context.Context, dir, base, head string) (string, error) {
 	// --end-of-options: a ref starting with "-" is a ref, not an option.
-	return run(ctx, dir, "diff", "--end-of-options", base+"..."+head)
+	return run(ctx, dir, "", "diff", "--end-of-options", base+"..."+head)
 }
 
-func run(ctx context.Context, dir string, args ...string) (string, error) {
+// Clone makes dir a clone of the repository at url, with the last depth
+// commits (all of them when depth is 0). When dir already holds a clone, it
+// fetches instead. A directory there that isn't a clone, such as one a
+// clone cut short left, is replaced.
+//
+// token, when not empty, authenticates to GitHub for this command only: it
+// isn't saved in the clone's configuration.
+func Clone(ctx context.Context, dir, url, token string, depth int) error {
+	if _, err := os.Stat(filepath.Join(dir, ".git")); err == nil {
+		return Fetch(ctx, dir, token)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return err
+	}
+	args := []string{"clone"}
+	if depth > 0 {
+		args = append(args, "--depth", strconv.Itoa(depth))
+	}
+	args = append(args, "--end-of-options", url, dir)
+	_, err := run(ctx, filepath.Dir(dir), token, args...)
+	return err
+}
+
+// Fetch runs `git fetch` in the clone at dir.
+func Fetch(ctx context.Context, dir, token string) error {
+	_, err := run(ctx, dir, token, "fetch")
+	return err
+}
+
+// env is the environment git runs with. It never waits for a password on a
+// terminal: it fails instead. token, when not empty, authenticates to GitHub
+// with a header set in the environment, which lasts for one command and,
+// unlike -c, doesn't show in the process list.
+func env(token string) []string {
+	vars := []string{"GIT_TERMINAL_PROMPT=0"}
+	if token != "" {
+		auth := base64.StdEncoding.EncodeToString([]byte("x-access-token:" + token))
+		vars = append(vars,
+			"GIT_CONFIG_COUNT=1",
+			"GIT_CONFIG_KEY_0=http.https://github.com/.extraheader",
+			"GIT_CONFIG_VALUE_0=Authorization: Basic "+auth)
+	}
+	return vars
+}
+
+// run runs git in dir; token, when not empty, authenticates to GitHub.
+func run(ctx context.Context, dir, token string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
+	// Never wait for a password on a terminal: fail instead.
+	cmd.Env = append(os.Environ(), env(token)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()

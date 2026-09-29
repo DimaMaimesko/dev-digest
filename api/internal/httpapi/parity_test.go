@@ -23,8 +23,10 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/anthropic"
 	"github.com/DimaMaimesko/dev-digest/api/internal/github"
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
+	"github.com/DimaMaimesko/dev-digest/api/internal/jobs"
 	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/repos"
 	"github.com/DimaMaimesko/dev-digest/api/internal/review"
 	"github.com/DimaMaimesko/dev-digest/api/internal/runner"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
@@ -61,6 +63,11 @@ func TestParityWithTypeScript(t *testing.T) {
 		Log: quiet,
 	})
 	defer cfg.Runner.Close()
+	// Likewise for the repository routes: nothing below clones.
+	background := jobs.New(cfg.DB, quiet)
+	defer background.Close()
+	cfg.Repos = repos.NewStore(repos.Config{DB: cfg.DB, Jobs: background, CloneDir: cfg.CloneDir,
+		Token: func() (string, error) { return "", errors.New("no cloning in the parity test") }})
 	goAPI := httptest.NewServer(httpapi.New(cfg).Handler())
 	defer goAPI.Close()
 
@@ -120,8 +127,8 @@ func TestParityWithTypeScript(t *testing.T) {
 	compare("/pulls/" + missing + "/runs/active")
 	compare("/pulls/" + missing + "/comments")
 	compare("/runs/" + missing + "/trace")
-	repos, _ := compare("/repos").([]any)
-	for _, repo := range repos {
+	repoList, _ := compare("/repos").([]any)
+	for _, repo := range repoList {
 		compare("/repos/" + field(repo, "id") + "/index-state")
 		pulls, _ := compare("/repos/" + field(repo, "id") + "/pulls").([]any)
 		for _, pull := range pulls {
@@ -172,6 +179,21 @@ func TestParityWithTypeScript(t *testing.T) {
 		{http.MethodPost, "/pulls/42/review", `{}`},
 		{http.MethodPost, "/runs/" + missing + "/cancel", `{}`},
 		{http.MethodPost, "/runs/42/cancel", `{}`},
+		// Repository requests that change nothing: bad input, adding one the
+		// workspace has (answered as it is, not cloned again), and refreshing
+		// or deleting a missing one. Never a URL with "..": the TS server
+		// adds it and deletes a directory outside the clones.
+		{http.MethodPost, "/repos", `{}`},
+		{http.MethodPost, "/repos", `{"url": "acme/widgets"}`},
+		{http.MethodPost, "/repos", `{"url": "https://gitlab.com/acme/widgets"}`},
+		{http.MethodPost, "/repos", `{"url": "https://github.com/acme"}`},
+		{http.MethodPost, "/repos/" + missing + "/refresh", `{}`},
+		{http.MethodPost, "/repos/42/refresh", `{}`},
+		{http.MethodDelete, "/repos/" + missing, `{}`},
+		{http.MethodDelete, "/repos/42", `{}`},
+	}
+	for _, repo := range repoList {
+		writes = append(writes, write{http.MethodPost, "/repos", `{"url": "https://github.com/` + field(repo, "full_name") + `"}`})
 	}
 	for _, body := range []string{`{}`, `{"theme": "blue"}`, `{"polling_interval_min": 0}`, `[1]`, `null`} {
 		writes = append(writes, write{http.MethodPut, "/settings", body})

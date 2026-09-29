@@ -74,8 +74,8 @@ func TestFallbackForwardsUnportedRoutes(t *testing.T) {
 
 	tests := []struct{ name, method, path, body string }{
 		{"a GET route not ported", http.MethodGet, "/not-ported/abc?page=2", ""},
-		// Only GET /repos is ported; POST /repos still belongs to TS.
-		{"another method on a ported path", http.MethodPost, "/repos", `{"url": "https://github.com/o/r"}`},
+		// GET and POST /repos are ported; PUT isn't a route of either.
+		{"another method on a ported path", http.MethodPut, "/repos", `{"url": "https://github.com/o/r"}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

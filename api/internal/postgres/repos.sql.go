@@ -11,6 +11,23 @@ import (
 	"github.com/google/uuid"
 )
 
+const deleteRepo = `-- name: DeleteRepo :execrows
+DELETE FROM repos WHERE workspace_id = $1 AND id = $2
+`
+
+type DeleteRepoParams struct {
+	WorkspaceID uuid.UUID
+	ID          uuid.UUID
+}
+
+func (q *Queries) DeleteRepo(ctx context.Context, arg DeleteRepoParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRepo, arg.WorkspaceID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getRepo = `-- name: GetRepo :one
 SELECT id, workspace_id, owner, name, full_name, default_branch, clone_path, last_polled_at, created_by, created_at FROM repos WHERE workspace_id = $1 AND id = $2
 `
@@ -22,6 +39,46 @@ type GetRepoParams struct {
 
 func (q *Queries) GetRepo(ctx context.Context, arg GetRepoParams) (Repo, error) {
 	row := q.db.QueryRow(ctx, getRepo, arg.WorkspaceID, arg.ID)
+	var i Repo
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Owner,
+		&i.Name,
+		&i.FullName,
+		&i.DefaultBranch,
+		&i.ClonePath,
+		&i.LastPolledAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const insertRepo = `-- name: InsertRepo :one
+INSERT INTO repos (workspace_id, owner, name, full_name, created_by)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (workspace_id, full_name) DO NOTHING
+RETURNING id, workspace_id, owner, name, full_name, default_branch, clone_path, last_polled_at, created_by, created_at
+`
+
+type InsertRepoParams struct {
+	WorkspaceID uuid.UUID
+	Owner       string
+	Name        string
+	FullName    string
+	CreatedBy   *uuid.UUID
+}
+
+// Adds a repository, unless the workspace has it already: then no row.
+func (q *Queries) InsertRepo(ctx context.Context, arg InsertRepoParams) (Repo, error) {
+	row := q.db.QueryRow(ctx, insertRepo,
+		arg.WorkspaceID,
+		arg.Owner,
+		arg.Name,
+		arg.FullName,
+		arg.CreatedBy,
+	)
 	var i Repo
 	err := row.Scan(
 		&i.ID,
@@ -80,5 +137,46 @@ UPDATE repos SET last_polled_at = now() WHERE id = $1
 
 func (q *Queries) MarkRepoPolled(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.Exec(ctx, markRepoPolled, id)
+	return err
+}
+
+const repoByFullName = `-- name: RepoByFullName :one
+SELECT id, workspace_id, owner, name, full_name, default_branch, clone_path, last_polled_at, created_by, created_at FROM repos WHERE workspace_id = $1 AND full_name = $2
+`
+
+type RepoByFullNameParams struct {
+	WorkspaceID uuid.UUID
+	FullName    string
+}
+
+func (q *Queries) RepoByFullName(ctx context.Context, arg RepoByFullNameParams) (Repo, error) {
+	row := q.db.QueryRow(ctx, repoByFullName, arg.WorkspaceID, arg.FullName)
+	var i Repo
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.Owner,
+		&i.Name,
+		&i.FullName,
+		&i.DefaultBranch,
+		&i.ClonePath,
+		&i.LastPolledAt,
+		&i.CreatedBy,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const setClonePath = `-- name: SetClonePath :exec
+UPDATE repos SET clone_path = $2, last_polled_at = now() WHERE id = $1
+`
+
+type SetClonePathParams struct {
+	ID        uuid.UUID
+	ClonePath *string
+}
+
+func (q *Queries) SetClonePath(ctx context.Context, arg SetClonePathParams) error {
+	_, err := q.db.Exec(ctx, setClonePath, arg.ID, arg.ClonePath)
 	return err
 }
