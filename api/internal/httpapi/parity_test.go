@@ -191,6 +191,9 @@ func TestParityWithTypeScript(t *testing.T) {
 		{http.MethodPost, "/repos/42/refresh", `{}`},
 		{http.MethodDelete, "/repos/" + missing, `{}`},
 		{http.MethodDelete, "/repos/42", `{}`},
+		// Not a missing repository: the TS server accepts that (202), Go
+		// answers 404. Never an existing one: that fetches and reindexes.
+		{http.MethodPost, "/repos/42/resync", `{}`},
 	}
 	for _, repo := range repoList {
 		writes = append(writes, write{http.MethodPost, "/repos", `{"url": "https://github.com/` + field(repo, "full_name") + `"}`})

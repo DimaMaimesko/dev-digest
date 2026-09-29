@@ -15,6 +15,7 @@ import (
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/jobs"
 	"github.com/DimaMaimesko/dev-digest/api/internal/pgtest"
+	"github.com/DimaMaimesko/dev-digest/api/internal/repointel"
 	"github.com/DimaMaimesko/dev-digest/api/internal/repos"
 )
 
@@ -74,7 +75,8 @@ func newFixture(t *testing.T) fixture {
 	remotes := t.TempDir()
 	src := filepath.Join(remotes, "acme", "widgets.git")
 	os.MkdirAll(src, 0o755)
-	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"commit", "-q", "--allow-empty", "-m", "first"}} {
+	os.WriteFile(filepath.Join(src, "a.ts"), []byte("export function a() {}\n"), 0o644)
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"add", "."}, {"commit", "-q", "-m", "first"}} {
 		cmd := exec.Command("git", args...)
 		cmd.Dir = src
 		cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t",
@@ -85,10 +87,11 @@ func newFixture(t *testing.T) fixture {
 	}
 	f.jobs = jobs.New(f.db, slog.New(slog.DiscardHandler))
 	t.Cleanup(f.jobs.Close)
+	token := func() (string, error) { return "", nil }
 	f.store = repos.NewStore(repos.Config{
-		DB: f.db, Jobs: f.jobs, CloneDir: f.cloneDir,
-		Token:  func() (string, error) { return "", nil },
-		Remote: "file://" + remotes + "/",
+		DB: f.db, Jobs: f.jobs, CloneDir: f.cloneDir, Token: token,
+		Remote:  "file://" + remotes + "/",
+		Indexer: repointel.NewIndexer(f.db, token),
 	})
 	return f
 }
@@ -207,5 +210,33 @@ func TestRefreshAndRemove(t *testing.T) {
 	// The clone stays, as in TS.
 	if _, err := os.Stat(filepath.Join(f.cloneDir, "acme", "widgets", ".git")); err != nil {
 		t.Errorf("the clone was removed: %v", err)
+	}
+}
+
+// A clone is indexed after it lands; refreshing and resyncing index again.
+func TestIndexJobs(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	repo, _, _ := f.store.Add(ctx, f.workspace, f.user, repos.Ref{Owner: "acme", Name: "widgets"})
+	f.jobs.Wait()
+	if n := f.count(t, `SELECT count(*) FROM repo_index_state WHERE repo_id = $1 AND status = 'full' AND files_indexed = 1`, repo.ID); n != 1 {
+		t.Error("not indexed after the clone")
+	}
+	if err := f.store.Refresh(ctx, f.workspace, repo.ID); err != nil {
+		t.Fatal(err)
+	}
+	job, err := f.store.Resync(ctx, f.workspace, repo.ID)
+	if err != nil || job == uuid.Nil {
+		t.Fatalf("Resync = %v, %v", job, err)
+	}
+	f.jobs.Wait()
+	// Each clone job indexes after it, the refresh's fetch too, as in TS.
+	for kind, want := range map[string]int{"clone": 2, "repo-intel-index": 2, "repo-intel-refresh": 1, "repo-intel-resync": 1} {
+		if n := f.count(t, `SELECT count(*) FROM jobs WHERE kind = $1 AND status = 'done'`, kind); n != want {
+			t.Errorf("%d %s jobs done, want %d", n, kind, want)
+		}
+	}
+	if _, err := f.store.Resync(ctx, f.workspace, uuid.New()); !errors.Is(err, repos.ErrNotFound) {
+		t.Errorf("Resync of an unknown repository: %v", err)
 	}
 }

@@ -82,3 +82,44 @@ func run(ctx context.Context, dir, token string, args ...string) (string, error)
 	}
 	return string(out), nil
 }
+
+// Head returns the commit the clone at dir has checked out.
+func Head(ctx context.Context, dir string) (string, error) {
+	out, err := run(ctx, dir, "", "rev-parse", "HEAD")
+	return strings.TrimSpace(out), err
+}
+
+// ChangedFiles lists the files that changed from commit base to head
+// (`git diff --name-only base..head`), relative to the clone's root.
+func ChangedFiles(ctx context.Context, dir, base, head string) ([]string, error) {
+	if base == head {
+		return nil, nil
+	}
+	out, err := run(ctx, dir, "", "diff", "--name-only", "--end-of-options", base+".."+head)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, line := range strings.Split(out, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
+}
+
+// syncDepth is how many commits Sync fetches: more than a clone's one, so
+// the last indexed commit is usually there for an incremental index.
+const syncDepth = 50
+
+// Sync moves the clone at dir to the latest commit of branch on GitHub:
+// it fetches it and resets the checkout to it. The clone is a read-only
+// mirror, so nothing is lost.
+func Sync(ctx context.Context, dir, branch, token string) error {
+	if _, err := run(ctx, dir, token, "fetch", "--depth", strconv.Itoa(syncDepth), "--end-of-options", "origin", branch); err != nil {
+		return err
+	}
+	// "origin/…" can't be read as an option; "--" ends the revisions.
+	_, err := run(ctx, dir, "", "reset", "--hard", "origin/"+branch, "--")
+	return err
+}

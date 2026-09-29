@@ -128,3 +128,24 @@ func (s *Server) deleteRepo(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id.String()})
 }
+
+// resyncRepo answers POST /repos/{id}/resync: in the background, it moves
+// the repository's clone to the latest commit of its default branch and
+// indexes what changed. It answers 202 with the job, whose outcome shows in
+// GET /repos/{id}/index-state.
+func (s *Server) resyncRepo(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	job, err := s.repos.Resync(r.Context(), s.workspace, id)
+	if errors.Is(err, repos.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "Repo not found")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusAccepted, map[string]string{"status": "accepted", "jobId": job.String()})
+}

@@ -6,15 +6,10 @@ Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
 **Status:** phases 1 and 2 of 6 are done. The review engine runs from the
 command line, and the HTTP API serves all 22 of the TS server's `GET` routes,
-runs reviews, and adds, refreshes and deletes repositories: 38 of its 40
-routes are ported, and the other 2 can be forwarded to it. They match the TS
+runs reviews, and adds, clones, indexes and deletes repositories: 39 of its
+40 routes are ported, and the last can be forwarded to it. They match the TS
 server on the dev database (see the parity test below). Left on the TS
-server: `POST /repos/{id}/resync`, which indexes a repository, and
-`POST /settings/test-connection` (see "Writes ported so far").
-
-**Until the indexer is ported** (next), a repository added through the Go
-server is cloned but not indexed: its reviews have the callers section but
-no repository map or file ranks. The TS server indexed after each clone. With a GitHub token, reading pull
+server: `POST /settings/test-connection` (see "Writes ported so far"). With a GitHub token, reading pull
 requests first syncs them from GitHub, as in TS; without one, or when GitHub
 can't be reached, the saved ones are served.
 
@@ -61,11 +56,25 @@ schema, and saves all keys in one transaction.
 
 `POST /settings/test-connection` stays on the TS server for now, reached
 through the fallback proxy. It saves API keys to `~/.devdigest/secrets.json`,
-and the TS server reads that file once and caches it: a key saved by the Go
-server wouldn't reach the TS server until a restart. Resyncing a repository,
-still on the TS server, fetches with the cached `GITHUB_TOKEN`. The Go server
-re-reads the file on every use, so it sees keys the TS server saves. It
-moves after the indexer.
+which the TS server reads once and caches; no route left on the TS server
+reads it any more, so it can move next.
+
+**The repo-intel index.** After each clone, a job indexes the repository
+(`repointel.Indexer`): the symbols and references of its TypeScript and
+JavaScript files, parsed with tree-sitter; the import graph; each file's
+PageRank over it; the repository map, 1500 tokens of the top-ranked
+signatures; and the HTTP routes and cron schedules each file names.
+Refreshing indexes the files that changed, and `POST /repos/{id}/resync`
+moves the clone to the latest commit of the default branch first. Every
+write of an index run is one transaction, one run per repository at a time.
+
+The TS indexer used two JavaScript libraries. dependency-cruiser built the
+import graph; Go resolves the imports itself: relative imports only (a
+`.js` import names the `.ts` file, a directory its index), and, as in the
+JavaScript the TypeScript compiler emits, not `import type` nor an import
+only used as a type. graphology computed the PageRank; Go repeats its
+arithmetic in the same order, so the scores are the same to the last bit.
+Token counts come from `tiktoken-go/tokenizer`, the same `cl100k_base`.
 
 **Repositories.** `POST /repos` adds a GitHub repository and clones it in the
 background (`internal/repos`, with the job runner `internal/jobs`);
@@ -194,7 +203,7 @@ removed, they become plain regression fixtures.
 | `internal/github` | Client for the parts of GitHub's REST API DevDigest uses (pull requests, their files, commits and review comments), written with `net/http`: retries rate limits, and server errors for reads, 30 s per request | `server/src/adapters/github/octokit.ts`, `platform/resilience.ts` |
 | `internal/anthropic` | Anthropic's API through the official Go SDK ([anthropic-sdk-go](https://github.com/anthropics/anthropic-sdk-go)): the model list, and `review.LLM`, which asks for the review as the input of a tool the model must call, as TS does. The SDK's own credential lookup is off: the key comes from `internal/secrets`, like the others. | `server/src/adapters/llm/anthropic.ts` |
 | `internal/git` | Runs `git`: clone and fetch (a GitHub token goes in a header, never saved; never waits for a password), and the diff a review reads | `server/src/adapters/git/simple-git.ts` |
-| `internal/repointel` | A review's context from repo-intel: the repository map and file ranks, read from the index the TS server builds until phase 5; and the callers of the symbols a change declares, found in the clone: `ParseSymbols` parses TypeScript and JavaScript with tree-sitter, `References` finds the lines that use a symbol | `getRepoMap`, `getFileRank` and `getCallerSignatures` in `server/src/modules/repo-intel/service.ts`, `parseSymbols` in `server/src/adapters/astgrep`, `extractReferences` in `server/src/adapters/codeindex/extract.ts` |
+| `internal/repointel` | Repo-intel. The index (`Indexer`): symbols and references parsed with tree-sitter, the import graph (`ImportGraph`), PageRank (`RankFiles`), the repository map (`RenderMap`), per-file routes and crons. A review's context from it: the map, the file ranks, and the callers of the symbols a change declares, found in the clone | `server/src/modules/repo-intel` (service, pipeline, repository), `server/src/adapters/astgrep`, `depgraph`, `tokenizer`, `codeindex/extract.ts` |
 | `internal/runner` | Runs reviews in the background: the diff (git, or the saved patches), the repo-intel context, the review engine, then the review, findings and trace saved in one transaction. Keeps each run's live log in memory for its followers. | `server/src/modules/reviews/run-executor.ts`, `service.ts`, `diff-loader.ts`, `platform/sse.ts`, `platform/run-logger.ts` |
 | `internal/repos` | Adding a GitHub repository from its URL, cloning it, refreshing and removing it | `server/src/modules/repos` |
 | `internal/jobs` | Runs slow work in the background, 3 at a time, 2 minutes each at most, and records each job in the `jobs` table | `server/src/platform/jobs.ts` |
@@ -208,7 +217,8 @@ imports `review` for the types of the `LLM` interface; `review` imports only
 library. The API adds `pgx` (the Postgres driver), `google/uuid`, Anthropic's
 official SDK, tree-sitter with its TypeScript and JavaScript grammars
 (`go-tree-sitter`, which uses cgo: building needs a C compiler, such as
-Xcode's), and, for tests only, `testcontainers-go`.
+Xcode's), `tiktoken-go/tokenizer` for token counts, and, for tests only,
+`testcontainers-go`.
 
 **How the TS parsing is checked.** `ParseSymbols` and `References` must find
 exactly what the TS server's ast-grep and regex code find, since what they
@@ -217,6 +227,15 @@ find goes into the review prompt. `testdata/symbols.golden.json` and
 the inputs next to them. Run once on every TypeScript and JavaScript file of
 this repository (396 files, 1465 symbols), and on real changes to the
 dev-digest clone, Go and TS agreed on everything.
+
+**How the indexer is checked.** The Go indexer indexed the dev-digest clone
+into a throwaway database, and every table was compared with the TS index of
+the same commit in the dev database: 1032 symbols (with their content
+hashes), 6416 references (with the file each resolves to), 514 import edges,
+312 file ranks (the PageRank scores bit for bit), 21 files' routes and crons,
+and the repository map (6130 bytes, 1494 tokens) were identical; so were the
+index state and its stats but the duration: 499 ms, against 1532 ms in TS.
+`testdata/index.golden.json` keeps small cases the TS functions answered.
 
 ## Commands
 
@@ -350,6 +369,10 @@ provider at once, so it waits for a real need.
 | Two adds of one repository at once | The second is a 500 with Postgres's error (reproduced) | 201, then 200 |
 | A clone that needs a password and has no token | git may ask for one on the server's terminal | Fails at once |
 | `attempts` of a failed job | 0 | 1 |
+| `POST /repos/{id}/resync` of an unknown repository | 202, and a job that does nothing | 404 |
+| Writing an index | Statement by statement: the index can be read half-written, and a failure leaves it so | One transaction, and one run per repository at a time |
+| A file that takes long to parse | Given up after 2 s | No limit: tree-sitter parses in linear time; the run's 110 s budget still applies |
+| Symbols the repository map ranks equal (same rank, export, line and name) | In the order Postgres returns | Also ordered by path |
 | A GitHub request times out | Not retried. The 30 s limit covers the whole detail fetch (3 to 4 requests). | Retried, like a server error. The limit is 30 s per request. |
 
 Kept as in TS, though odd:
@@ -369,6 +392,8 @@ Kept as in TS, though odd:
 - `POST /repos/{id}/poll` without a GitHub token is a 500 `config_error`.
 - The OpenAI model list keeps GPT models and names containing `o1` or `o3`,
   so `o4-mini` isn't offered.
+- An incremental index of a commit that deletes a file is `partial`: the
+  file can't be read. Refreshing also runs a full index, after the fetch.
 - Deleting a repository leaves its clone on disk; adding it again fetches
   into it. Refreshing fetches, but doesn't move the checked-out commit.
 - `POST /runs/{id}/cancel` answers `{"ok": true}` for any run, even one that

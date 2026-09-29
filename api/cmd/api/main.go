@@ -44,6 +44,7 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/jobs"
 	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/repointel"
 	"github.com/DimaMaimesko/dev-digest/api/internal/repos"
 	"github.com/DimaMaimesko/dev-digest/api/internal/review"
 	"github.com/DimaMaimesko/dev-digest/api/internal/runner"
@@ -112,6 +113,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		Log:       log,
 	})
 	defer reviews.Close() // after the server stops: the runs in progress end as failed
+	githubToken := func() (string, error) { return store.Get(secrets.GitHubToken) }
 	background := jobs.New(pool, log)
 	defer background.Close() // likewise for clones in progress
 	if n, err := reviews.FailStale(ctx); err != nil {
@@ -137,7 +139,8 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 				DB:       pool,
 				Jobs:     background,
 				CloneDir: cfg.cloneDir,
-				Token:    func() (string, error) { return store.Get(secrets.GitHubToken) },
+				Token:    githubToken,
+				Indexer:  repointel.NewIndexer(pool, githubToken),
 			}),
 		}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,

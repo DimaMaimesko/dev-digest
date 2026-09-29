@@ -18,6 +18,7 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/git"
 	"github.com/DimaMaimesko/dev-digest/api/internal/jobs"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/repointel"
 )
 
 // Ref names a GitHub repository.
@@ -69,6 +70,9 @@ type Config struct {
 	// Remote is where repositories are cloned from, owner/name.git being
 	// added to it; "" means "https://github.com/".
 	Remote string
+	// Indexer, when set, indexes a repository after each clone, and again
+	// on refresh and resync.
+	Indexer *repointel.Indexer
 }
 
 // Store changes a workspace's repositories.
@@ -102,6 +106,13 @@ func (s *Store) Add(ctx context.Context, workspace, user uuid.UUID, ref Ref) (re
 	return repo, true, s.clone(ctx, repo)
 }
 
+// Kinds of the index jobs, as the TS server named them.
+const (
+	indexJob   = "repo-intel-index"
+	refreshJob = "repo-intel-refresh"
+	resyncJob  = "repo-intel-resync"
+)
+
 // ErrNotFound means the workspace has no such repository.
 var ErrNotFound = errors.New("repository not found")
 
@@ -115,7 +126,37 @@ func (s *Store) Refresh(ctx context.Context, workspace, id uuid.UUID) error {
 	if err != nil {
 		return err
 	}
-	return s.clone(ctx, repo)
+	if err := s.clone(ctx, repo); err != nil {
+		return err
+	}
+	// Indexes what the fetch brings; a no-op while the commit is unchanged.
+	_, err = s.index(ctx, repo, refreshJob, s.cfg.Indexer.Refresh)
+	return err
+}
+
+// Resync moves a repository's clone to the latest commit of its default
+// branch and indexes what changed, in the background. It returns the job.
+func (s *Store) Resync(ctx context.Context, workspace, id uuid.UUID) (uuid.UUID, error) {
+	repo, err := s.q.GetRepo(ctx, postgres.GetRepoParams{WorkspaceID: workspace, ID: id})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, ErrNotFound
+	}
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return s.index(ctx, repo, resyncJob, s.cfg.Indexer.Resync)
+}
+
+// index enqueues an index job of kind for repo, running run; it does
+// nothing without an Indexer.
+func (s *Store) index(ctx context.Context, repo postgres.Repo, kind string, run func(context.Context, uuid.UUID) (repointel.Result, error)) (uuid.UUID, error) {
+	if s.cfg.Indexer == nil {
+		return uuid.Nil, nil
+	}
+	return s.cfg.Jobs.Enqueue(ctx, repo.WorkspaceID, kind, map[string]string{"repoId": repo.ID.String()}, func(ctx context.Context) error {
+		_, err := run(ctx, repo.ID)
+		return err
+	})
 }
 
 // Remove removes a repository from the workspace, with its pull requests
@@ -146,7 +187,12 @@ func (s *Store) clone(ctx context.Context, repo postgres.Repo) error {
 		if err := git.Clone(ctx, dir, remote, token, cloneDepth); err != nil {
 			return fmt.Errorf("clone %s: %w", ref.FullName(), err)
 		}
-		return s.q.SetClonePath(context.WithoutCancel(ctx), postgres.SetClonePathParams{ID: repo.ID, ClonePath: &dir})
+		if err := s.q.SetClonePath(context.WithoutCancel(ctx), postgres.SetClonePathParams{ID: repo.ID, ClonePath: &dir}); err != nil {
+			return err
+		}
+		// Its own job, with its own time limit, as in TS.
+		_, err = s.index(context.WithoutCancel(ctx), repo, indexJob, s.cfg.Indexer.Full)
+		return err
 	})
 	return err
 }

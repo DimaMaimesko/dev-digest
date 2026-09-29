@@ -1,0 +1,249 @@
+{
+ "references": {
+  "component.jsx": [
+   {
+    "name": "Card",
+    "line": 11
+   }
+  ],
+  "crlf.ts": [],
+  "dupes.ts": [],
+  "kinds.ts": [
+   {
+    "name": "x",
+    "line": 4
+   },
+   {
+    "name": "find",
+    "line": 16
+   },
+   {
+    "name": "toLowerCase",
+    "line": 33
+   },
+   {
+    "name": "RepoStore",
+    "line": 19
+   }
+  ],
+  "long.ts": [
+   {
+    "name": "resolve",
+    "line": 2
+   }
+  ],
+  "notes.txt": [],
+  "plain.mjs": []
+ },
+ "facts": [
+  {
+   "source": "app.get('/repos', h)",
+   "endpoints": [
+    "GET /repos"
+   ],
+   "crons": []
+  },
+  {
+   "source": "router.post<Body>(\"/pulls/:id\", h)",
+   "endpoints": [
+    "POST /pulls/:id"
+   ],
+   "crons": []
+  },
+  {
+   "source": "fastify.delete(`/runs/${id}`, h)",
+   "endpoints": [
+    "DELETE /runs/${id}"
+   ],
+   "crons": []
+  },
+  {
+   "source": "api.PATCH(\"/x\")",
+   "endpoints": [
+    "PATCH /x"
+   ],
+   "crons": []
+  },
+  {
+   "source": "app.get('/a') ; app.post('/b')",
+   "endpoints": [
+    "GET /a"
+   ],
+   "crons": []
+  },
+  {
+   "source": "{ method: 'GET', url: '/health' }",
+   "endpoints": [
+    "GET /health"
+   ],
+   "crons": []
+  },
+  {
+   "source": "{ method: \"post\", other: 1, url: '/x' }",
+   "endpoints": [
+    "POST /x"
+   ],
+   "crons": []
+  },
+  {
+   "source": "cron.schedule('*/5 * * * *', job)",
+   "endpoints": [],
+   "crons": [
+    "*/5 * * * *"
+   ]
+  },
+  {
+   "source": "new CronJob('0 0 * * *', f)",
+   "endpoints": [],
+   "crons": [
+    "0 0 * * *"
+   ]
+  },
+  {
+   "source": "schedule('10 20 * * 1')",
+   "endpoints": [],
+   "crons": [
+    "10 20 * * 1"
+   ]
+  },
+  {
+   "source": "cron('not a schedule')",
+   "endpoints": [],
+   "crons": []
+  },
+  {
+   "source": "jobs.register(CLONE_JOB_KIND, 'clone')",
+   "endpoints": [],
+   "crons": [
+    "job:clone"
+   ]
+  },
+  {
+   "source": "container.jobs.enqueue(ws, 'repo_index', {})",
+   "endpoints": [],
+   "crons": [
+    "job:repo_index"
+   ]
+  },
+  {
+   "source": "register('poll_repos')",
+   "endpoints": [],
+   "crons": [
+    "job:poll_repos"
+   ]
+  },
+  {
+   "source": "enqueue('other_thing')",
+   "endpoints": [],
+   "crons": []
+  },
+  {
+   "source": "enqueue('digest_daily')",
+   "endpoints": [],
+   "crons": [
+    "job:digest_daily"
+   ]
+  },
+  {
+   "source": "app.get('/a')\napp.get('/a')",
+   "endpoints": [
+    "GET /a"
+   ],
+   "crons": []
+  }
+ ],
+ "rank": {
+  "files": [
+   "a",
+   "b",
+   "c",
+   "d",
+   "e",
+   "f"
+  ],
+  "edges": [
+   [
+    "b",
+    "a"
+   ],
+   [
+    "c",
+    "a"
+   ],
+   [
+    "d",
+    "a"
+   ],
+   [
+    "e",
+    "b"
+   ],
+   [
+    "a",
+    "c"
+   ],
+   [
+    "f",
+    "f"
+   ],
+   [
+    "x",
+    "a"
+   ]
+  ],
+  "ranks": [
+   {
+    "path": "a",
+    "pagerank": 0.44843995522088137,
+    "percentile": 100
+   },
+   {
+    "path": "b",
+    "pagerank": 0.053883495145631066,
+    "percentile": 67
+   },
+   {
+    "path": "c",
+    "pagerank": 0.41029790885678846,
+    "percentile": 83
+   },
+   {
+    "path": "d",
+    "pagerank": 0.02912621359223301,
+    "percentile": 50
+   },
+   {
+    "path": "e",
+    "pagerank": 0.02912621359223301,
+    "percentile": 50
+   },
+   {
+    "path": "f",
+    "pagerank": 0.02912621359223301,
+    "percentile": 50
+   }
+  ]
+ },
+ "tokens": [
+  {
+   "text": "",
+   "tokens": 0
+  },
+  {
+   "text": "hello world",
+   "tokens": 2
+  },
+  {
+   "text": "# Repo skeleton (top-ranked by import graph only, partial view)\nserver/src/app.ts:\n  export async function buildApp(opts: BuildOptions): Promise<FastifyInstance>\n",
+   "tokens": 36
+  },
+  {
+   "text": "naïve café 😀 — “quotes”",
+   "tokens": 9
+  },
+  {
+   "text": "    indented\n\n\ttabs  and   spaces",
+   "tokens": 10
+  }
+ ]
+}

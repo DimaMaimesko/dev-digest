@@ -131,6 +131,7 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /repos", s.addRepo)
 		mux.HandleFunc("POST /repos/{id}/refresh", s.refreshRepo)
 		mux.HandleFunc("DELETE /repos/{id}", s.deleteRepo)
+		mux.HandleFunc("POST /repos/{id}/resync", s.resyncRepo)
 	}
 	if s.runner != nil {
 		mux.HandleFunc("POST /pulls/{id}/review", s.startReview)

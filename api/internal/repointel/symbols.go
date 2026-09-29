@@ -2,6 +2,7 @@ package repointel
 
 import (
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 
@@ -306,3 +307,120 @@ func isJSSpace(r rune) bool {
 
 // jsTrim is JavaScript's String.prototype.trim.
 func jsTrim(s string) string { return strings.TrimFunc(s, isJSSpace) }
+
+// Reference is a use of a name in a file: a call, a `new`, or a JSX
+// element.
+type Reference struct {
+	Name string
+	Line int // 1-based
+}
+
+// ParseReferences returns the uses of names in a TypeScript or JavaScript
+// file, each name once per line: `f(`, `x.f(` (as f), `new C` and `<C>`
+// (in TSX and JSX; lower-case HTML elements aren't). Imports, keywords and
+// a symbol's own declaration line aren't uses.
+func ParseReferences(path string, source []byte) []Reference {
+	lang := language(path)
+	if lang == nil {
+		return nil
+	}
+	decls := map[string]bool{}
+	for _, s := range ParseSymbols(path, source) {
+		decls[s.Name+":"+strconv.Itoa(s.Line)] = true
+	}
+	parser := sitter.NewParser()
+	defer parser.Close()
+	if err := parser.SetLanguage(lang); err != nil {
+		return nil
+	}
+	tree := parser.Parse(source, nil)
+	defer tree.Close()
+	root := tree.RootNode()
+
+	var out []Reference
+	seen := map[string]bool{}
+	add := func(name string, n *sitter.Node) {
+		key := name + ":" + strconv.Itoa(row(n))
+		if keywords[name] || decls[key] || seen[key] {
+			return
+		}
+		seen[key] = true
+		out = append(out, Reference{Name: name, Line: row(n)})
+	}
+	for _, n := range descendants(root, "call_expression") {
+		if insideImport(n) {
+			continue
+		}
+		switch fn := n.ChildByFieldName("function"); {
+		case fn == nil:
+		case fn.Kind() == "identifier":
+			add(fn.Utf8Text(source), n)
+		case fn.Kind() == "member_expression":
+			if name := rightmostName(fn, source); name != "" {
+				add(name, n)
+			}
+		}
+	}
+	for _, n := range descendants(root, "new_expression") {
+		if insideImport(n) {
+			continue
+		}
+		if name := rightmostName(n.ChildByFieldName("constructor"), source); name != "" {
+			add(name, n)
+		}
+	}
+	if ext := strings.ToLower(filepath.Ext(path)); ext == ".tsx" || ext == ".jsx" {
+		for _, kind := range []string{"jsx_opening_element", "jsx_self_closing_element"} {
+			for _, n := range descendants(root, kind) {
+				if insideImport(n) {
+					continue
+				}
+				name := leftmostName(n.ChildByFieldName("name"), source)
+				if name == "" || name[0] >= 'a' && name[0] <= 'z' {
+					continue
+				}
+				add(name, n)
+			}
+		}
+	}
+	return out
+}
+
+func insideImport(n *sitter.Node) bool {
+	for p := n.Parent(); p != nil; p = p.Parent() {
+		if p.Kind() == "import_statement" {
+			return true
+		}
+	}
+	return false
+}
+
+// leftmostName is Foo in `Foo` or `Foo.Bar.Baz`.
+func leftmostName(n *sitter.Node, source []byte) string {
+	if n == nil {
+		return ""
+	}
+	switch n.Kind() {
+	case "identifier", "type_identifier":
+		return n.Utf8Text(source)
+	case "member_expression":
+		return leftmostName(n.ChildByFieldName("object"), source)
+	}
+	return ""
+}
+
+// rightmostName is Baz in `Foo.Bar.Baz`, or Foo in `Foo`.
+func rightmostName(n *sitter.Node, source []byte) string {
+	if n == nil {
+		return ""
+	}
+	switch n.Kind() {
+	case "identifier", "type_identifier", "property_identifier":
+		return n.Utf8Text(source)
+	case "member_expression":
+		if p := n.ChildByFieldName("property"); p != nil {
+			return p.Utf8Text(source)
+		}
+	}
+	return ""
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/jobs"
+	"github.com/DimaMaimesko/dev-digest/api/internal/repointel"
 	"github.com/DimaMaimesko/dev-digest/api/internal/repos"
 )
 
@@ -37,10 +38,11 @@ func withRepos(t *testing.T) (fixture, *jobs.Runner, string) {
 	j := jobs.New(f.db, quiet)
 	t.Cleanup(j.Close)
 	clones := t.TempDir()
+	token := func() (string, error) { return "", nil }
 	f.repos = repos.NewStore(repos.Config{
-		DB: f.db, Jobs: j, CloneDir: clones,
-		Token:  func() (string, error) { return "", nil },
-		Remote: "file://" + remotes + "/",
+		DB: f.db, Jobs: j, CloneDir: clones, Token: token,
+		Remote:  "file://" + remotes + "/",
+		Indexer: repointel.NewIndexer(f.db, token),
 	})
 	return f, j, clones
 }
@@ -120,9 +122,31 @@ func TestRefreshAndDeleteRepo(t *testing.T) {
 	if pulls != 0 {
 		t.Error("the repository's pull request wasn't deleted with it")
 	}
-	for _, r := range []struct{ method, path string }{{http.MethodPost, "/repos/42/refresh"}, {http.MethodDelete, "/repos/42"}} {
+	assertJSON(t, f.send(t, http.MethodPost, "/repos/"+repo.ID+"/resync", ``), http.StatusNotFound, notFound) // deleted above
+	for _, r := range []struct{ method, path string }{{http.MethodPost, "/repos/42/refresh"}, {http.MethodDelete, "/repos/42"}, {http.MethodPost, "/repos/42/resync"}} {
 		if paths := issuePaths(t, f.send(t, r.method, r.path, ``)); len(paths) != 1 {
 			t.Errorf("%s %s: issues at %v", r.method, r.path, paths)
 		}
+	}
+}
+
+func TestResyncRepo(t *testing.T) {
+	f, j, _ := withRepos(t)
+	var repo struct{ ID string }
+	decode(t, f.send(t, http.MethodPost, "/repos", `{"url": "https://github.com/acme/widgets"}`), http.StatusCreated, &repo)
+	j.Wait()
+	var got struct {
+		Status string
+		JobID  string `json:"jobId"`
+	}
+	decode(t, f.send(t, http.MethodPost, "/repos/"+repo.ID+"/resync", ``), http.StatusAccepted, &got)
+	if got.Status != "accepted" || uuid.Validate(got.JobID) != nil {
+		t.Errorf("answer = %+v", got)
+	}
+	j.Wait()
+	var kind string
+	f.db.QueryRow(context.Background(), `SELECT kind FROM jobs WHERE id = $1`, got.JobID).Scan(&kind)
+	if kind != "repo-intel-resync" {
+		t.Errorf("job kind %q", kind)
 	}
 }
