@@ -1,6 +1,7 @@
 // Command api serves the DevDigest HTTP API for the web app.
 //
-// It reads its settings from the environment, like the TS server:
+// It listens on 127.0.0.1 only, so other machines can't reach it. It reads its
+// settings from the environment, like the TS server:
 // DATABASE_URL, API_PORT (default 3001), WEB_PORT (default 3000; the web
 // app's port, allowed by CORS) and LOG_LEVEL (default info). The database must
 // be migrated and seeded, as scripts/dev.sh does.
@@ -65,10 +66,9 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		return fmt.Errorf("find the default workspace: %w", err)
 	}
 
-	// IPv4 on every interface, like the TS server. With network "tcp", Go
-	// would open a dual-stack IPv6 socket, which macOS lets share a port with
-	// a server already listening on IPv4: both would run on one port.
-	ln, err := net.Listen("tcp4", "0.0.0.0:"+strconv.Itoa(cfg.port))
+	// Loopback only, like the TS server: the API stores API keys and runs git,
+	// so other machines on the network must not reach it.
+	ln, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(cfg.port))
 	if err != nil {
 		return err // e.g. the port is taken
 	}

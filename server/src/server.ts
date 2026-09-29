@@ -26,7 +26,9 @@ async function main() {
   }
 
   try {
-    await app.listen({ port: config.apiPort, host: '0.0.0.0' });
+    // Loopback only: the API stores API keys and runs git, so other machines on
+    // the network must not reach it. The web app calls it on the same machine.
+    await app.listen({ port: config.apiPort, host: '127.0.0.1' });
     app.log.info(`DevDigest API listening on http://localhost:${config.apiPort}`);
   } catch (err) {
     app.log.error(err);
