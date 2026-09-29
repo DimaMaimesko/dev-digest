@@ -8,11 +8,15 @@
 // come from ~/.devdigest/secrets.json, then from the environment. The database
 // must be migrated and seeded, as scripts/dev.sh does.
 //
+// While routes move over from the TS server, TS_API_URL (such as
+// http://localhost:3001) makes it forward every request it doesn't handle yet
+// to the TS server, so the web app can use it for everything.
+//
 // It doesn't read server/.env. To run it next to the TS server, with the same
 // settings and another port, build it and start it from server/:
 //
 //	make build
-//	cd ../server && (set -a; . ./.env; set +a; API_PORT=3002 ../api/bin/api)
+//	cd ../server && (set -a; . ./.env; set +a; API_PORT=3002 TS_API_URL=http://localhost:3001 ../api/bin/api)
 package main
 
 import (
@@ -23,6 +27,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -86,12 +91,16 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			CloneDir:  cfg.cloneDir,
 			Secrets:   secrets.New(cfg.secretsPath, getenv),
 			Log:       log,
+			Fallback:  cfg.tsAPI,
 		}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
 	log.Info("DevDigest API listening", "url", fmt.Sprintf("http://localhost:%d", cfg.port))
+	if cfg.tsAPI != nil {
+		log.Info("forwarding routes not ported yet", "to", cfg.tsAPI.String())
+	}
 
 	select {
 	case err := <-serveErr:
@@ -112,6 +121,7 @@ type config struct {
 	cloneDir    string // absolute
 	secretsPath string
 	logLevel    slog.Level
+	tsAPI       *url.URL // the TS server, for routes not ported yet; nil to answer 404
 }
 
 // loadConfig reads the settings from the environment, with the same names and
@@ -152,6 +162,16 @@ func loadConfig(getenv func(string) string) (config, error) {
 		}
 		cfg.webOrigin = "http://localhost:" + v
 	}
+	if v := getenv("TS_API_URL"); v != "" {
+		u, err := url.Parse(v)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return config{}, fmt.Errorf("TS_API_URL %q: want a URL such as http://localhost:3001", v)
+		}
+		if isLocal(u.Hostname()) && u.Port() == strconv.Itoa(cfg.port) {
+			return config{}, fmt.Errorf("TS_API_URL %q is this server's own address (API_PORT %d): it would forward requests to itself", v, cfg.port)
+		}
+		cfg.tsAPI = u
+	}
 	switch v := getenv("LOG_LEVEL"); v {
 	case "", "info":
 	case "trace", "debug":
@@ -166,4 +186,8 @@ func loadConfig(getenv func(string) string) (config, error) {
 		return config{}, fmt.Errorf("LOG_LEVEL %q: want fatal, error, warn, info, debug, trace or silent", v)
 	}
 	return cfg, nil
+}
+
+func isLocal(host string) bool {
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }

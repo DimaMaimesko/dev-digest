@@ -35,7 +35,7 @@ func TestLogRequests(t *testing.T) {
 
 	logRequests(log, teapot).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/tea", nil))
 
-	if line := logs.String(); !strings.Contains(line, "method=GET path=/tea status=418") {
+	if line := logs.String(); !strings.Contains(line, "method=GET path=/tea status=418 by=go") {
 		t.Errorf("log = %q", line)
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -26,6 +27,7 @@ type Server struct {
 	webOrigin string
 	cloneDir  string
 	secrets   *secrets.Store
+	fallback  *url.URL
 }
 
 // Config is what a Server needs.
@@ -38,6 +40,10 @@ type Config struct {
 	CloneDir  string // where repositories are cloned
 	Secrets   *secrets.Store
 	Log       *slog.Logger
+	// Fallback, when set, is the TS server's base URL, such as
+	// "http://localhost:3001". Requests the Go server doesn't handle yet go
+	// there instead of getting a 404.
+	Fallback *url.URL
 }
 
 // New returns a Server.
@@ -50,6 +56,7 @@ func New(cfg Config) *Server {
 		webOrigin: cfg.WebOrigin,
 		cloneDir:  cfg.CloneDir,
 		secrets:   cfg.Secrets,
+		fallback:  cfg.Fallback,
 	}
 }
 
@@ -75,7 +82,12 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /pulls/{id}/runs", s.listRuns)
 	mux.HandleFunc("GET /pulls/{id}/runs/active", s.listActiveRuns)
 	mux.HandleFunc("GET /runs/{id}/trace", s.getRunTrace)
-	mux.HandleFunc("/", notFound)
+	// Any other method or path: a route not ported yet.
+	if s.fallback != nil {
+		mux.Handle("/", fallbackProxy(s.fallback, s.log))
+	} else {
+		mux.HandleFunc("/", notFound)
+	}
 
 	return logRequests(s.log, recoverPanics(s.log, cors(s.webOrigin, securityHeaders(mux))))
 }

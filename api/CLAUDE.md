@@ -79,7 +79,7 @@ The migration plan has 6 phases. Update this list as phases finish.
 
 1. ✅ Port `reviewer-core` into `internal/review`, with an OpenAI-compatible adapter and the `cmd/review` CLI
 2. ✅ API skeleton and the database-backed read endpoints (18 of 22 `GET` routes; the other 4 need GitHub, the LLM adapters or the run bus). Add each new route to the walk in `parity_test.go`.
-3. **Next:** write paths: agents, settings, add repo, PR import, GitHub sync and comments
+3. **In progress:** write paths. ✅ Fallback proxy (`TS_API_URL`): unported routes are forwarded to the TS server, so the web app can run on the Go server. Next: settings, agents, add repo, PR import, GitHub sync and comments.
 4. Reviews: run executor, background runs, SSE
 5. repo-intel (tree-sitter)
 6. Remove the TS server; migrations and CI move to Go
