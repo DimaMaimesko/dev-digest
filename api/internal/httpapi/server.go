@@ -98,6 +98,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /pulls/{id}/runs", s.listRuns)
 	mux.HandleFunc("GET /pulls/{id}/runs/active", s.listActiveRuns)
 	mux.HandleFunc("GET /runs/{id}/trace", s.getRunTrace)
+	mux.HandleFunc("DELETE /reviews/{id}", s.deleteReview)
+	mux.HandleFunc("DELETE /runs/{id}", s.deleteRun)
+	mux.HandleFunc("POST /findings/{id}/accept", s.acceptFinding)
+	mux.HandleFunc("POST /findings/{id}/dismiss", s.dismissFinding)
 	// Any other method or path: a route not ported yet.
 	if s.fallback != nil {
 		mux.Handle("/", fallbackProxy(s.fallback, s.log))

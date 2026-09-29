@@ -43,6 +43,11 @@ and `POST /agents/{id}/skills`. A config change gives the agent a new version
 and saves a snapshot of the config; turning it on or off doesn't. The rules
 are the TS server's, in `internal/agents`.
 
+The review actions: `POST /findings/{id}/accept` and `/dismiss` (a decision
+replaces the one before it), `DELETE /reviews/{id}` (a review and its
+findings; its run stays in the history) and `DELETE /runs/{id}` (a run, its
+trace and the review it produced).
+
 `PUT /settings`, checked by the parity test with requests that change
 nothing: an empty update and invalid ones. It validates the known preferences like the TS server's Zod
 schema, and saves all keys in one transaction.
@@ -251,6 +256,7 @@ provider at once, so it waits for a real need.
 | Creating an agent; replacing its skills | Separate statements: a failure can leave an agent without its version 1, or with no skills | One transaction each |
 | Linking a skill that doesn't exist, or twice | 500, with the database's foreign key error in the message | 422 naming the field |
 | Linking another workspace's skill | Linked | 422 |
+| `DELETE /runs/{id}` | Two statements, not in a transaction: a failure between them deletes the review but keeps the run | One statement |
 
 Kept as in TS, though odd:
 
@@ -259,6 +265,8 @@ Kept as in TS, though odd:
 - Renaming an agent or changing its description gives it a new version,
   though snapshots hold neither. Sending an `output_schema` always does, even
   an unchanged one. Changing its skills doesn't, though snapshots hold them.
+- `DELETE /runs/{id}` answers 200 with `{"ok": false}` for an unknown run,
+  while `DELETE /reviews/{id}` answers 404 for an unknown review.
 
 Not ported yet: the lethal-trifecta fields (`trifecta_components`,
 `evidence`) stay in the schema, so the model's answer has the same shape, but

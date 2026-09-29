@@ -134,8 +134,9 @@ func TestParityWithTypeScript(t *testing.T) {
 	}
 
 	// Writes that change nothing: an empty settings update, invalid bodies,
-	// and missing agents. For an error, the status, code and message must
-	// match; the details are Zod's in TS and simpler in Go.
+	// and missing agents, findings, reviews and runs. For an error, the
+	// status, code and message must match; the details are Zod's in TS and
+	// simpler in Go.
 	type write struct{ method, path, body string }
 	writes := []write{
 		{http.MethodPost, "/agents", `{}`},
@@ -143,6 +144,12 @@ func TestParityWithTypeScript(t *testing.T) {
 		{http.MethodPut, "/agents/" + missing, `{}`},
 		{http.MethodDelete, "/agents/" + missing, `{}`},
 		{http.MethodPost, "/agents/" + missing + "/skills", `{"skill_ids": []}`},
+		{http.MethodPost, "/findings/" + missing + "/accept", `{}`},
+		{http.MethodPost, "/findings/" + missing + "/dismiss", `{}`},
+		{http.MethodPost, "/findings/42/accept", `{}`},
+		{http.MethodDelete, "/reviews/" + missing, `{}`},
+		{http.MethodDelete, "/reviews/42", `{}`},
+		{http.MethodDelete, "/runs/" + missing, `{}`},
 	}
 	for _, body := range []string{`{}`, `{"theme": "blue"}`, `{"polling_interval_min": 0}`, `[1]`, `null`} {
 		writes = append(writes, write{http.MethodPut, "/settings", body})

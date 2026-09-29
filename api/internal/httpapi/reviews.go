@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -124,6 +125,58 @@ func toFindingJSON(f postgres.Finding) findingJSON {
 	}
 }
 
+// deleteReview answers DELETE /reviews/{id}: one agent's review, with its
+// findings. The run that produced it stays in the run history.
+func (s *Server) deleteReview(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	n, err := s.queries.DeleteReview(r.Context(), postgres.DeleteReviewParams{WorkspaceID: s.workspace, ID: id})
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	if n == 0 {
+		writeError(w, http.StatusNotFound, "not_found", "Review not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// acceptFinding answers POST /findings/{id}/accept.
+func (s *Server) acceptFinding(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	s.decideFinding(w, r, postgres.DecideFindingParams{AcceptedAt: &now})
+}
+
+// dismissFinding answers POST /findings/{id}/dismiss.
+func (s *Server) dismissFinding(w http.ResponseWriter, r *http.Request) {
+	now := time.Now()
+	s.decideFinding(w, r, postgres.DecideFindingParams{DismissedAt: &now})
+}
+
+// decideFinding saves the user's decision on a finding, which replaces an
+// earlier one, and sends the finding back.
+func (s *Server) decideFinding(w http.ResponseWriter, r *http.Request, decision postgres.DecideFindingParams) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	decision.ID = id
+	decision.WorkspaceID = s.workspace
+	f, err := s.queries.DecideFinding(r.Context(), decision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		writeError(w, http.StatusNotFound, "not_found", "Finding not found")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]findingJSON{"finding": toFindingJSON(f)})
+}
+
 // runJSON is one review run: an agent reviewing a pull request once, whatever
 // the outcome (RunSummary in server/src/vendor/shared/contracts/trace.ts).
 type runJSON struct {
@@ -209,6 +262,22 @@ func (s *Server) listActiveRuns(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// deleteRun answers DELETE /runs/{id}: a run, its trace and the review it
+// produced. Like the TS server, it answers 200 either way, with "ok" false
+// when there was no such run.
+func (s *Server) deleteRun(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	n, err := s.queries.DeleteRun(r.Context(), postgres.DeleteRunParams{WorkspaceID: s.workspace, ID: id})
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": n > 0})
 }
 
 // getRunTrace answers GET /runs/{id}/trace: the run's trace, a JSON document
