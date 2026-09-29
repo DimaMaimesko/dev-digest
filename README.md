@@ -11,12 +11,12 @@ aliases, not published modules):
 
 | Folder           | Package                     | What it is                                            | Port |
 |------------------|-----------------------------|-------------------------------------------------------|------|
-| `server/`        | `@devdigest/api`            | Fastify API + Drizzle/Postgres (pgvector)             | 3001 |
+| `server/`        | `@devdigest/api`            | Fastify API + Drizzle/Postgres (pgvector); being replaced by `api/` | 3001 with `--ts-api` |
 | `client/`        | `@devdigest/web`            | Next.js 15 web app (the studio)                       | 3000 |
 | `reviewer-core/` | `@devdigest/reviewer-core`  | Pure review engine: diff → prompt → LLM → findings    | —    |
 | `e2e/`           | `@devdigest/e2e`            | Deterministic browser e2e (agent-browser)             | —    |
 | `server/src/vendor/shared` | `@devdigest/shared` | Zod contracts shared across every package             | —    |
-| `api/`           | Go module                   | Go rewrite of `server/` + `reviewer-core/`, in progress ([status](api/README.md)) | —    |
+| `api/`           | Go module                   | Go rewrite of `server/` + `reviewer-core/`: the API `dev.sh` runs ([status](api/README.md)) | 3001 |
 
 `repo-intel` (the codebase indexer that powers the **Indexed** badge and feeds
 project context into reviews) lives inside the server at
@@ -92,6 +92,7 @@ These are intentionally **not** in the starter — each lesson adds one back:
 ## Prerequisites
 
 - **Node** ≥ 22 · **pnpm** ≥ 10 (`npm i -g pnpm`) · **Docker** (for Postgres)
+- **Go** (the version in `api/go.mod`) and a C compiler (cgo, for tree-sitter)
 
 ## Quick start (from zero)
 
@@ -102,14 +103,16 @@ These are intentionally **not** in the starter — each lesson adds one back:
 This script:
 1. starts Postgres (`docker compose up -d`) and waits until it's healthy,
 2. creates `server/.env` and `client/.env` from `.env.example` if missing,
-3. installs deps in `server/` and `client/` (only when `node_modules` is absent),
-4. applies DB migrations and seeds demo data,
-5. launches the API (`:3001`) and the web app (`:3000`).
+3. builds the Go API (`api/bin`) and installs deps in `client/` (only when
+   `node_modules` is absent),
+4. applies DB migrations and seeds demo data (`api/bin/db`),
+5. launches the Go API (`:3001`, with `server/.env` loaded) and the web app (`:3000`).
 
 Open **http://localhost:3000**. Press **Ctrl-C** to stop the dev servers —
 Postgres keeps running (`docker compose down` to stop it).
 
-Flags: `--no-seed` · `--no-client` · `--db-only` · `--help`.
+Flags: `--no-seed` · `--no-client` · `--db-only` · `--ts-api` (run the old TS
+API from `server/` instead of the Go one) · `--help`.
 
 > Add your keys in `server/.env` (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`,
 > `GITHUB_TOKEN`) or via the Settings UI at runtime.
@@ -119,10 +122,10 @@ Flags: `--no-seed` · `--no-client` · `--db-only` · `--help`.
 ```sh
 docker compose up -d                                   # Postgres + pgvector
 
-cd server && pnpm install
-pnpm db:migrate          # apply migrations (NOT run automatically on boot)
-pnpm db:seed             # idempotent demo data (optional)
-pnpm dev                 # API on :3001
+cd api && make build     # bin/api, bin/db, bin/review
+./bin/db migrate         # apply migrations (NOT run automatically on boot)
+./bin/db seed            # idempotent demo data (optional)
+cd ../server && (set -a; . ./.env; set +a; ../api/bin/api)   # API on :3001
 
 cd ../client && pnpm install && pnpm dev               # web on :3000
 ```
@@ -153,14 +156,14 @@ Postgres); everything else is hermetic. The browser e2e flows live in
 ## Troubleshooting
 
 - **`relation ... does not exist` / API errors on first run** — migrations weren't
-  applied. The server does **not** migrate on boot: run `cd server && pnpm db:migrate`.
+  applied. The server does **not** migrate on boot: run `cd api && go run ./cmd/db migrate`.
 - **Port 5433 already in use** — Docker Postgres is published on host port `5433`
   (not `5432`, so it doesn't clash with a native Postgres). If something else holds
   5433, change the host port in `docker-compose.yml` **and** `DATABASE_URL` in
   `server/.env` to match.
-- **`vector` type errors** — `pnpm db:migrate` enables the pgvector extension
-  before applying the migrations (`server/src/db/migrate.ts`); the migration files
-  themselves don't. Make sure you migrated with `pnpm db:migrate`, against the
-  Dockerized DB (it ships pgvector), not a different one.
+- **`vector` type errors** — the migrator (`api/cmd/db migrate`, or the TS
+  `pnpm db:migrate`) enables the pgvector extension before applying the
+  migrations; the migration files themselves don't. Make sure you migrated with
+  one of them, against the Dockerized DB (it ships pgvector), not a different one.
 - **Reset everything** — `docker compose down -v` drops the volume, then re-run
   `./scripts/dev.sh`.

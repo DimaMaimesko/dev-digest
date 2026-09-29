@@ -32,11 +32,11 @@ PG_PASS="${E2E_PG_PASS:-devdigest}"
 API_PORT="${E2E_API_PORT:-3101}"
 WEB_PORT="${E2E_WEB_PORT:-3100}"
 
-# Exported BEFORE any tsx/next spawn. dotenv (used by migrate/seed/config) does
-# not override already-set env, so these win over server/.env's :5433 / :3001
-# without touching the file. WEB_PORT must be exported too: the API derives its
-# CORS allow-origin (config.webOrigin) from it. 127.0.0.1 (not localhost) avoids
-# an IPv6 ::1 vs published-IPv4 mismatch against the container.
+# Exported BEFORE anything starts. The Go API and api/bin/db don't read
+# server/.env, so these are all the settings they get: no API keys, which the
+# flows don't need. WEB_PORT must be exported too: the API derives its CORS
+# allow-origin from it. 127.0.0.1 (not localhost) avoids an IPv6 ::1 vs
+# published-IPv4 mismatch against the container.
 export DATABASE_URL="postgres://${PG_USER}:${PG_PASS}@127.0.0.1:${PG_PORT}/${PG_DB}"
 export API_PORT WEB_PORT
 export NEXT_PUBLIC_API_BASE="http://localhost:${API_PORT}"
@@ -47,6 +47,7 @@ warn() { printf '\033[1;33m! %s\033[0m\n' "$*"; }
 
 # --- prerequisites -----------------------------------------------------------
 command -v docker >/dev/null || { echo "docker not found"; exit 1; }
+command -v go     >/dev/null || { echo "go not found (https://go.dev/dl)"; exit 1; }
 command -v pnpm   >/dev/null || { echo "pnpm not found (npm i -g pnpm)"; exit 1; }
 command -v agent-browser >/dev/null || \
   warn "agent-browser not found — install once: npm i -g agent-browser && agent-browser install"
@@ -54,7 +55,7 @@ command -v agent-browser >/dev/null || \
 # --- teardown trap (installed before we start anything) ----------------------
 SERVER_PID=""
 WEB_PID=""
-# Recursively kill a process and all its descendants. `pnpm exec tsx` / `next dev`
+# Recursively kill a process and all its descendants. `next dev`
 # spawn the real listener as a GRANDCHILD, so a plain `kill $PID` + `pkill -P`
 # leaves it orphaned (port stays bound). Walk the tree leaves-first instead.
 kill_tree() {
@@ -110,11 +111,11 @@ install_if_needed() {
     (cd "$1" && pnpm install)
   fi
 }
-install_if_needed server
 install_if_needed client
-# reviewer-core's RAW source is imported by the API at runtime (tsconfig alias);
-# without its deps the API crashes at boot with ERR_MODULE_NOT_FOUND. It uses npm.
-[ -d reviewer-core/node_modules ] || { log "installing deps in reviewer-core"; (cd reviewer-core && npm ci); }
+
+# --- build the Go commands (api, db, review) into api/bin ---------------------
+log "building the Go API"
+(cd api && make build)
 
 # --- migrate + seed the ISOLATED db ------------------------------------------
 # Hard guard: never let migrate/seed run against anything but the isolated port.
@@ -122,16 +123,15 @@ case "$DATABASE_URL" in
   *":${PG_PORT}/"*) : ;;
   *) echo "refusing: DATABASE_URL is not on :$PG_PORT ($DATABASE_URL)"; exit 1 ;;
 esac
+# From api/, where bin/db finds the migrations (../server/src/db/migrations).
 log "applying migrations (isolated db)"
-(cd server && pnpm db:migrate)
+(cd api && ./bin/db migrate)
 log "seeding demo data (isolated db)"
-(cd server && pnpm db:seed)
+(cd api && ./bin/db seed)
 
 # --- API on :$API_PORT -------------------------------------------------------
-# tsx directly (not `pnpm start`, which needs a build; not `tsx watch`, to avoid
-# a mid-suite watcher restart).
-log "starting API on :$API_PORT"
-(cd server && pnpm exec tsx src/server.ts) &
+log "starting the Go API on :$API_PORT"
+(cd api && exec ./bin/api) &
 SERVER_PID=$!
 log "waiting for API /health"
 api_up=0

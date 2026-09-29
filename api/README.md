@@ -4,13 +4,15 @@ A Go rewrite of [`server/`](../server/README.md) and
 [`reviewer-core/`](../reviewer-core/README.md), built to serve the existing
 Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
-**Status:** phases 1 and 2 of 6 are done. The review engine runs from the
+**Status:** phases 1 to 5 of 6 are done. The review engine runs from the
 command line, and the HTTP API serves all 22 of the TS server's `GET` routes,
 runs reviews, and adds, clones, indexes and deletes repositories: all 40 of
 its routes are ported, and match the TS server on the dev database (see the
-parity test below). The database can be migrated and seeded from Go too
-(`cmd/db`), so the web app can run on the Go server alone. The TS server stays
-in the repository for now, as the reference the parity tests compare with. With a GitHub token, reading pull
+parity test below). The database is migrated and seeded from Go too
+(`cmd/db`), and `./scripts/dev.sh`, `./scripts/e2e.sh` and the `e2e web`
+workflow run the web app on the Go server alone. The TS server stays in the
+repository for now, as the reference the parity tests compare with
+(`./scripts/dev.sh --ts-api` runs it instead of the Go server). With a GitHub token, reading pull
 requests first syncs them from GitHub, as in TS; without one, or when GitHub
 can't be reached, the saved ones are served.
 
@@ -38,14 +40,18 @@ with `internal/migrate`.
 
 ## Run the API
 
+`./scripts/dev.sh` builds it, migrates and seeds the database, and runs it
+on :3001 with the web app on :3000.
+
 It uses the same database, environment variables and secrets file
 (`~/.devdigest/secrets.json`) as the TS server. The database must be migrated
 and seeded, as `./scripts/dev.sh` does.
 
-Unlike the TS server, it doesn't read `server/.env`. To run it next to the TS
-server with the same settings, load that file into the shell and start it from
-`server/`, so relative paths such as `DEVDIGEST_CLONE_DIR=./clones` resolve the
-same way:
+Unlike the TS server, it doesn't read `server/.env`: `dev.sh` loads that file
+for it (a variable already set in the shell wins, as with dotenv) and starts
+it from `server/`, so relative paths such as `DEVDIGEST_CLONE_DIR=./clones`
+resolve the same way. To run it by hand, next to the TS server, on another
+port:
 
 ```sh
 cd api && make build   # writes bin/api and bin/review
@@ -122,13 +128,15 @@ server during a review.
 
 ## Use the web app with the Go server
 
-The Go server serves every route now. It can still forward a request it
-doesn't handle to the TS server (`TS_API_URL`), which was how the web app
-kept working while routes moved over; without it, such a request is a 404.
-The steps below run both, as during the move; the TS server is only needed
-for its migrations and seed until phase 6.
+`./scripts/dev.sh` does this: the web app on :3000 uses the Go server on
+:3001, alone.
 
-1. Keep the TS server running on :3001 (`./scripts/dev.sh`).
+The Go server can still forward a request it doesn't handle to the TS server
+(`TS_API_URL`), which was how the web app kept working while routes moved
+over; without it, such a request is a 404. The steps below run both, as
+during the move:
+
+1. Keep the TS server running on :3001 (`./scripts/dev.sh --ts-api`).
 2. Start the Go server on :3002, forwarding to it:
 
    ```sh
@@ -161,6 +169,7 @@ skills and each saved version; plus the not-found cases. Lists are compared in a
 instants:
 
 ```sh
+./scripts/dev.sh --ts-api --no-client   # the TS server on :3001
 PARITY_TS_URL=http://localhost:3001 go test ./internal/httpapi -run Parity -v
 ```
 
