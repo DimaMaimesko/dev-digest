@@ -7,7 +7,9 @@ import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATIONS_DIR = join(__dirname, 'migrations');
+// The migrations moved to the Go module (api/migrations); this server still
+// applies them from there.
+const MIGRATIONS_DIR = join(__dirname, '..', '..', '..', 'api', 'migrations');
 
 /**
  * Apply all migrations to the given database URL. Ensures the `vector`

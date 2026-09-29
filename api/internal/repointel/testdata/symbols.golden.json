@@ -1,0 +1,231 @@
+{
+ "component.jsx": [
+  {
+   "name": "Button",
+   "kind": "function",
+   "line": 3,
+   "endLine": 5,
+   "exported": true,
+   "signature": "function Button({ label })"
+  },
+  {
+   "name": "Card",
+   "kind": "function",
+   "line": 7,
+   "endLine": 7,
+   "exported": false,
+   "signature": "const Card = (props)"
+  },
+  {
+   "name": "Page",
+   "kind": "class",
+   "line": 9,
+   "endLine": 13,
+   "exported": true,
+   "signature": "class Page extends React.Component"
+  },
+  {
+   "name": "Page.render",
+   "kind": "method",
+   "line": 10,
+   "endLine": 12,
+   "exported": true,
+   "signature": "render()"
+  },
+  {
+   "name": "render",
+   "kind": "method",
+   "line": 10,
+   "endLine": 12,
+   "exported": true,
+   "signature": "render()"
+  }
+ ],
+ "crlf.ts": [
+  {
+   "name": "crlf",
+   "kind": "function",
+   "line": 1,
+   "endLine": 3,
+   "exported": true,
+   "signature": "function crlf(a: string)"
+  },
+  {
+   "name": "arrow",
+   "kind": "function",
+   "line": 5,
+   "endLine": 6,
+   "exported": true,
+   "signature": "const arrow = (b: number)"
+  }
+ ],
+ "dupes.ts": [
+  {
+   "name": "twice",
+   "kind": "function",
+   "line": 1,
+   "endLine": 1,
+   "exported": true,
+   "signature": "function twice()"
+  }
+ ],
+ "kinds.ts": [
+  {
+   "name": "loadRepo",
+   "kind": "function",
+   "line": 3,
+   "endLine": 5,
+   "exported": true,
+   "signature": "async function loadRepo(id: string, opts?: { deep: boolean }): Promise<Repo>"
+  },
+  {
+   "name": "ids",
+   "kind": "function",
+   "line": 7,
+   "endLine": 9,
+   "exported": false,
+   "signature": "function* ids(): Generator<number>"
+  },
+  {
+   "name": "RepoStore",
+   "kind": "class",
+   "line": 11,
+   "endLine": 21,
+   "exported": true,
+   "signature": "class RepoStore extends Base implements Store"
+  },
+  {
+   "name": "RepoStore.create",
+   "kind": "method",
+   "line": 18,
+   "endLine": 20,
+   "exported": true,
+   "signature": "static create(): RepoStore"
+  },
+  {
+   "name": "create",
+   "kind": "method",
+   "line": 18,
+   "endLine": 20,
+   "exported": true,
+   "signature": "static create(): RepoStore"
+  },
+  {
+   "name": "Repo",
+   "kind": "interface",
+   "line": 23,
+   "endLine": 25,
+   "exported": true,
+   "signature": "interface Repo"
+  },
+  {
+   "name": "Id",
+   "kind": "type",
+   "line": 27,
+   "endLine": 27,
+   "exported": false,
+   "signature": "type Id = string | number;"
+  },
+  {
+   "name": "Color",
+   "kind": "enum",
+   "line": 29,
+   "endLine": 31,
+   "exported": true,
+   "signature": "enum Color"
+  },
+  {
+   "name": "toSlug",
+   "kind": "function",
+   "line": 33,
+   "endLine": 33,
+   "exported": true,
+   "signature": "const toSlug = (name: string): string"
+  },
+  {
+   "name": "later",
+   "kind": "function",
+   "line": 35,
+   "endLine": 37,
+   "exported": false,
+   "signature": "let later = function named(a: number)"
+  },
+  {
+   "name": "gen",
+   "kind": "function",
+   "line": 38,
+   "endLine": 40,
+   "exported": false,
+   "signature": "var gen = function* ()"
+  },
+  {
+   "name": "helper",
+   "kind": "function",
+   "line": 42,
+   "endLine": 47,
+   "exported": true,
+   "signature": "function helper( first: string, second: number, )"
+  },
+  {
+   "name": "main",
+   "kind": "function",
+   "line": 50,
+   "endLine": 50,
+   "exported": true,
+   "signature": "function main()"
+  }
+ ],
+ "long.ts": [
+  {
+   "name": "aVeryLongFunctionNameThatKeepsGoing",
+   "kind": "function",
+   "line": 1,
+   "endLine": 3,
+   "exported": true,
+   "signature": "function aVeryLongFunctionNameThatKeepsGoing(firstArgument: string, secondArgument: number, third: boolean): Promise<vo…"
+  },
+  {
+   "name": "naïveCafé",
+   "kind": "function",
+   "line": 5,
+   "endLine": 7,
+   "exported": true,
+   "signature": "function naïveCafé(ä: string, ü: number): string"
+  },
+  {
+   "name": "emoji😀",
+   "kind": "function",
+   "line": 9,
+   "endLine": 11,
+   "exported": true,
+   "signature": "function emoji😀(a: string, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb…"
+  },
+  {
+   "name": "arrowWithBlock",
+   "kind": "function",
+   "line": 13,
+   "endLine": 15,
+   "exported": true,
+   "signature": "const arrowWithBlock = async (req: Request)"
+  }
+ ],
+ "notes.txt": [],
+ "plain.mjs": [
+  {
+   "name": "add",
+   "kind": "function",
+   "line": 1,
+   "endLine": 3,
+   "exported": true,
+   "signature": "function add(a, b)"
+  },
+  {
+   "name": "mul",
+   "kind": "function",
+   "line": 5,
+   "endLine": 7,
+   "exported": true,
+   "signature": "const mul = function (a, b)"
+  }
+ ]
+}

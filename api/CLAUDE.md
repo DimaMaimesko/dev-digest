@@ -1,0 +1,105 @@
+# api/ — DevDigest backend in Go
+
+This module is a Go rewrite of `server/` (Fastify) and `reviewer-core/`. The
+Next.js client in `client/` stays as it is, so the Go API must serve the same
+HTTP routes and the same JSON shapes.
+
+The owner is learning Go. The code must be **idiomatic Go**, not TypeScript
+translated line by line ("don't write Java in Go").
+
+## Porting rule: port behavior, not structure
+
+The TypeScript code is the reference for *what* the system does: routes, JSON
+shapes, business rules. Its tests are the spec. It is not a guide to *how* Go
+code should be organized.
+
+- Before porting a file, read its TS tests and every caller.
+- If the TS code has a bug, fix it in Go, add a test for it, and list it under
+  "Deviations from the TS code" in `README.md`.
+- If a TS pattern has no Go equivalent, don't imitate it. Write it the Go way
+  and explain the difference in the commit message.
+- Order the moves by shared state. While both servers run (the Go server
+  forwards unported routes to TS), a route that writes state the TS server
+  caches in memory must move only after every TS route that reads that cache.
+  Example: `POST /settings/test-connection` writes `secrets.json`, which TS
+  reads once and caches, so it stayed on TS until every route reading that
+  cache had moved.
+
+## Go rules
+
+| Don't carry over from TS | Do this in Go |
+|---|---|
+| DI container (`platform/container.ts`) | Build every dependency in `cmd/*/main.go` and pass it into constructors |
+| One central interfaces file (`vendor/shared/adapters.ts`) | Define small interfaces in the package that *uses* them. Accept interfaces, return structs. |
+| Service classes that can reach everything | A struct holds only the dependencies it uses. Use a plain function when there's no state. |
+| `throw` and error class hierarchies | Return errors. Wrap with `fmt.Errorf("doing x: %w", err)`, check with `errors.Is` / `errors.As` |
+| Cancellation flags and `checkCancelled()` callbacks | `context.Context` as the first parameter of anything that does I/O or can take long |
+| `helpers.ts`, `constants.ts`, `_shared/`, `utils` | No utils, helpers or common packages. Put code next to what uses it. |
+| Deep folders and `index.ts` barrel files | Flat packages named for what they provide. Avoid stutter: `review.Ground`, not `review.GroundReviewFindings` |
+| Global singletons (`export const runBus`) | No package-level mutable state. Pass values in. |
+| Fire-and-forget `void promise` | Every goroutine has an owner, a `context`, and a way to stop |
+| `mocks.ts` / mock frameworks | Small hand-written fakes in `_test.go` files |
+| Zod runtime schemas | Plain structs; validate where input enters the system |
+| Drizzle ORM | SQL with `pgx` + `sqlc` |
+| `undefined` / optional everywhere | Useful zero values. Use a pointer only when "absent" differs from "zero". |
+
+Clean architecture, kept light: follow the **dependency rule** (domain packages
+such as `internal/review` never import HTTP, SQL or SDK packages). Skip the
+ceremony: no package per layer, no interface for every struct, no mapping
+between identical structs. Add structure when it's needed, not in advance.
+
+Other rules:
+- Standard library first. Add a dependency only when it saves real work, and
+  say why in the commit.
+- Tests: standard `testing`, table-driven with `t.Run`, external `_test`
+  packages for public APIs. No assertion libraries.
+- Doc comments on every exported identifier, written as full sentences.
+
+## Layout
+
+```
+api/
+  cmd/api           HTTP API server
+  cmd/review        command-line review of a diff
+  cmd/db            migrate and seed the database
+  migrations        the SQL migrations in Drizzle's format (journal + .sql), embedded; sqlc reads them too
+  internal/httpapi  routes, JSON, middleware (CORS, security headers, logs)
+  internal/postgres sqlc-generated queries; edit queries/*.sql, then `make generate`
+  internal/pgtest   throwaway migrated Postgres for tests
+  internal/migrate  applies the migrations (Drizzle-compatible bookkeeping)
+  internal/seed     the starting data
+  internal/secrets  API keys: ~/.devdigest/secrets.json, then the environment
+  internal/agents   creating and changing agents, with their version history
+  internal/github   client for GitHub's REST API (net/http)
+  internal/pulls    saving pull requests from GitHub
+  internal/git      running git in a clone (the review diff)
+  internal/repointel repo-intel: the indexer, and a review's context from it (tree-sitter)
+  internal/runner   runs reviews in the background; live logs; cancel
+  internal/repos    adding, cloning, refreshing, removing repositories
+  internal/jobs     background jobs, 3 at a time, recorded in the jobs table
+  internal/diff     parse unified diffs; which new-file lines a hunk shows
+  internal/review   domain: findings, grounding, prompt, LLM interface, structured output, Run
+  internal/openai   adapter: OpenAI-compatible chat completions (OpenAI, OpenRouter, Ollama)
+  internal/anthropic adapter: Anthropic's API, through the official SDK
+```
+
+## Commands
+
+Run from `api/`:
+
+- `make check`: gofmt check, `go vet`, `staticcheck`, `go test -race`. Run it before every commit. Database tests need Docker running. Building needs cgo (tree-sitter) and a C compiler.
+- `make generate`: regenerate `internal/postgres` after changing SQL.
+- `PARITY_TS_URL=http://localhost:3001 go test ./internal/httpapi -run Parity -v`: compare with the running TS server (`./scripts/dev.sh --ts-api` starts it).
+- `make fmt`: format everything.
+- `go run ./cmd/db migrate` and `go run ./cmd/db seed`: prepare a database (DATABASE_URL).
+
+## Status
+
+The migration plan has 6 phases. Update this list as phases finish.
+
+1. ✅ Port `reviewer-core` into `internal/review`, with an OpenAI-compatible adapter and the `cmd/review` CLI
+2. ✅ API skeleton and the database-backed read endpoints (18 of 22 `GET` routes; the other 4 need GitHub, the LLM adapters or the run bus). Add each new route to the walk in `parity_test.go`.
+3. ✅ Write paths. ✅ Fallback proxy (`TS_API_URL`): unported routes are forwarded to the TS server, so the web app can run on the Go server. ✅ `PUT /settings`. ✅ Agent writes (`internal/agents`). ✅ Accept and dismiss findings, delete reviews and runs. ✅ GitHub sync on pull request reads, `POST /repos/{id}/poll` (`internal/github`, `internal/pulls`). ✅ PR comments, read and post. ✅ Model lists (`internal/anthropic`). The repository routes and `POST /settings/test-connection` move in phase 5.
+4. ✅ Reviews: inputs (`internal/git`, `internal/repointel` with the tree-sitter callers), Anthropic for reviews, the run executor (`internal/runner`), and the review, events and cancel routes. Prompts checked byte-for-byte against TS with fake models. `POST /settings/test-connection` moves with phase 5 (see "Order the moves by shared state").
+5. ✅ Repositories: clone and fetch, job runner, `POST /repos`, refresh, delete (`internal/repos`, `internal/jobs`); the repo-intel indexer and `POST /repos/{id}/resync` (`repointel.Indexer`; checked against the TS index table by table); `POST /settings/test-connection`. All 40 routes are ported.
+6. **In progress:** ✅ Migrations and seed in Go (`internal/migrate`, compatible with Drizzle's bookkeeping; `internal/seed`; `cmd/db`). ✅ The migrations moved to `api/migrations` (embedded); the TS server points there. ✅ `scripts/dev.sh`, `scripts/e2e.sh` and the `e2e web` workflow run the Go server (`dev.sh --ts-api` runs the TS one, for the parity test). Don't delete `server/`: the owner keeps it as the reference. Removing `reviewer-core/` and the TS workflows waits for the owner's go-ahead.

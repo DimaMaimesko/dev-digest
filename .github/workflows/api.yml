@@ -1,0 +1,46 @@
+# api suite — the Go rewrite of the backend (api/).
+# gofmt, go vet, staticcheck and the race-enabled tests. Database tests start
+# Postgres with testcontainers, using the runner's Docker.
+#
+# docs/agent-prompts/** is in the path filter because a test keeps the seed's
+# embedded prompts equal to them.
+name: api
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'api/**'
+      - 'docs/agent-prompts/**'
+      - '.github/workflows/api.yml'
+  pull_request:
+    paths:
+      - 'api/**'
+      - 'docs/agent-prompts/**'
+      - '.github/workflows/api.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: go checks
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
+      - run: go install honnef.co/go/tools/cmd/staticcheck@2026.1
+
+      - run: make check

@@ -6,6 +6,9 @@
 # image; the tests also self-skip (`dockerAvailable()`) if Docker is somehow
 # absent, so this job degrades to a no-op rather than a hard failure.
 #
+# api/migrations/** is in the path filter: the migrations moved to the Go
+# module, and these tests still apply them.
+#
 # Linux only — testcontainers needs a Linux Docker daemon (Windows runners
 # don't provide one).
 name: server integration
@@ -15,10 +18,12 @@ on:
     branches: [main]
     paths:
       - 'server/**'
+      - 'api/migrations/**'
       - '.github/workflows/server-integration.yml'
   pull_request:
     paths:
       - 'server/**'
+      - 'api/migrations/**'
       - '.github/workflows/server-integration.yml'
 
 permissions:

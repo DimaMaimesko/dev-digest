@@ -1,0 +1,169 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "request_changes",
+        "approve",
+        "comment"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Overall PR quality from 0 to 100, where HIGHER is better. 90–100 = no or only trivial issues (approve); 60–89 = minor suggestions; 30–59 = warnings worth addressing; 0–29 = critical problems. Must be consistent with `findings`: if there are no findings, the score is 90 or above."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "CRITICAL",
+              "WARNING",
+              "SUGGESTION"
+            ]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "bug",
+              "security",
+              "perf",
+              "style",
+              "test"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "start_line": {
+            "type": "integer"
+          },
+          "end_line": {
+            "type": "integer"
+          },
+          "rationale": {
+            "type": "string"
+          },
+          "suggestion": {
+            "type": "string",
+            "nullable": true
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "finding",
+                  "secret_leak",
+                  "lethal_trifecta",
+                  "phantom",
+                  "hook"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trifecta_components": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "private_data_access",
+                    "untrusted_input",
+                    "exfil_path"
+                  ]
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "component": {
+                      "type": "string",
+                      "enum": [
+                        "private_data_access",
+                        "untrusted_input",
+                        "exfil_path"
+                      ]
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "component",
+                    "file",
+                    "line"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "severity",
+          "category",
+          "title",
+          "file",
+          "start_line",
+          "end_line",
+          "rationale",
+          "suggestion",
+          "confidence",
+          "kind",
+          "trifecta_components",
+          "evidence"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "verdict",
+    "summary",
+    "score",
+    "findings"
+  ],
+  "additionalProperties": false
+}

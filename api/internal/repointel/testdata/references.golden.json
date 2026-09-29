@@ -1,0 +1,75 @@
+{
+ "source": "foo(1);\nbar.foo(2);\nx = obj.foo (3);\nmyfoo(4);\n$foo(5);\na.$foo(6);\n_foo(7)\nnew Foo();\nnew FooBar();\n<Foo />\n<Foo>\n<Foo\n<Foox />\nfunction foo(a) {\nasync function foo() {\nconst foo = () => 1;\nclass Foo {\ntype Foo = {};\n// foo(8)\n  * foo(9)\n/* foo(10) */\nx(); // foo(11)\nx(); /* foo(12) */\nimport { foo } from \"./foo\";\nexport { foo } from \"./foo\";\nexport * from \"./foo\";\nexport { foo };\nlog(\"foo(13)\");\nlog('it\\'s foo(14)');\nlog(`foo(15)`);\nit's foo(16)\nlog(\"a\\\"b\", foo(17));\nurl = \"http://x\"; foo(18);\nx = \"unclosed foo(19)\nlog('a\\\\'); foo(20);\nlog(\"\\\"); foo(21)\nfoo\t(22);\nfoo (23);\n // foo(24)\n﻿import foo from \"x\"; foo(25)\nx(); // foo(26)\r\nfoo(27); // c\r\n\"a\" + foo(28) + \"b\"\n'\\'' + foo(29)\nfoo\nbar(foo)\n  return foo  (30);\na?.foo(31)\nFoo.foo(32)\nx.foo.bar(33)\nlog('a\" foo(49) \\'\n * foo(50)\nlog(\"\\\" + foo(51)",
+ "cases": [
+  {
+   "symbol": "foo",
+   "lines": [
+    1,
+    2,
+    3,
+    23,
+    31,
+    32,
+    34,
+    35,
+    36,
+    37,
+    38,
+    41,
+    42,
+    43,
+    44,
+    47,
+    48,
+    49,
+    53
+   ]
+  },
+  {
+   "symbol": "Foo",
+   "lines": [
+    8,
+    10,
+    11
+   ]
+  },
+  {
+   "symbol": "Store.foo",
+   "lines": [
+    1,
+    2,
+    3,
+    23,
+    31,
+    32,
+    34,
+    35,
+    36,
+    37,
+    38,
+    41,
+    42,
+    43,
+    44,
+    47,
+    48,
+    49,
+    53
+   ]
+  },
+  {
+   "symbol": "$foo",
+   "lines": [
+    5,
+    6
+   ]
+  },
+  {
+   "symbol": "bar",
+   "lines": [
+    46,
+    50
+   ]
+  }
+ ]
+}

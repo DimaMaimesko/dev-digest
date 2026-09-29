@@ -1,0 +1,33 @@
+# sqlc turns the SQL in internal/postgres/queries into typed Go code.
+# Regenerate with `make generate` after changing a query or the schema.
+version: "2"
+sql:
+  - engine: postgresql
+    # The tables come from the migrations; sqlc reads the .sql files.
+    schema: migrations
+    queries: internal/postgres/queries
+    gen:
+      go:
+        package: postgres
+        out: internal/postgres
+        sql_package: pgx/v5
+        emit_pointers_for_null_types: true
+        omit_unused_structs: true # only models the queries use
+        # Plain Go types instead of pgtype wrappers; a pointer where the
+        # column can be NULL.
+        overrides:
+          - db_type: pg_catalog.timestamptz
+            go_type: time.Time
+          - db_type: pg_catalog.timestamptz
+            nullable: true
+            go_type:
+              type: time.Time
+              pointer: true
+          - db_type: uuid
+            go_type: github.com/google/uuid.UUID
+          - db_type: uuid
+            nullable: true
+            go_type:
+              import: github.com/google/uuid
+              type: UUID
+              pointer: true

@@ -90,7 +90,7 @@ flowchart TB
 
 | Var | Default | Notes |
 |-----|---------|-------|
-| `DATABASE_URL` | `postgres://devdigest:devdigest@localhost:5432/devdigest` | required to migrate/serve |
+| `DATABASE_URL` | `postgres://devdigest:devdigest@localhost:5433/devdigest` | required to migrate/serve |
 | `API_PORT` / `WEB_PORT` | `3001` / `3000` | API port; `WEB_PORT` also sets the allowed CORS origin |
 | `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY` | — | optional, per-provider; also settable via Settings UI |
 | `GITHUB_TOKEN` | — | optional; PAT with repo scope (`GITHUB_PAT` accepted as a fallback) |
@@ -104,8 +104,9 @@ Secrets (API keys, `GITHUB_TOKEN`) are **not** part of `AppConfig` — they go
 through `SecretsProvider` (`~/.devdigest/secrets.json`, mode `0600`, with
 `process.env` as a fallback), per the **Where keys live** note at the top.
 
-Migrations are **not** applied on boot — run `pnpm db:migrate` (pgvector is
-enabled by migration `0000`). `pnpm db:seed` is idempotent demo data
+Migrations are **not** applied on boot — run `pnpm db:migrate`. It enables
+pgvector before applying them (`src/db/migrate.ts`); the migration files
+don't. `pnpm db:seed` is idempotent demo data
 (`acme/payments-api`, PR #482, the two built-in agents).
 
 ## Review context (non-obvious)

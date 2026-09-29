@@ -1,11 +1,13 @@
 # Web end-to-end suite — the real stack + deterministic agent-browser flows.
 #
 # Boots exactly what scripts/dev.sh boots: Postgres (pgvector) in Docker, the
-# Fastify API on :3001 (migrated + seeded), and the Next.js app on :3000 built
-# against that API. Then runs the e2e/ specs through the agent-browser CLI.
+# Go API (api/) on :3001, migrated and seeded by api/cmd/db, and the Next.js
+# app on :3000 built against that API. Then runs the e2e/ specs through the
+# agent-browser CLI.
 #
-# No API keys: loadConfig() marks every secret optional, so the API boots and
-# serves the seeded read-only data the specs exercise — no LLM is called.
+# No API keys: every key is optional, so the API boots and serves the seeded
+# read-only data the specs exercise — no LLM is called.
+
 name: e2e web
 
 on:
@@ -13,13 +15,13 @@ on:
     branches: [main]
     paths:
       - 'client/**'
-      - 'server/**'
+      - 'api/**'
       - 'e2e/**'
       - '.github/workflows/e2e-web.yml'
   pull_request:
     paths:
       - 'client/**'
-      - 'server/**'
+      - 'api/**'
       - 'e2e/**'
       - '.github/workflows/e2e-web.yml'
 
@@ -31,7 +33,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  DATABASE_URL: postgres://devdigest:devdigest@localhost:5432/devdigest
+  DATABASE_URL: postgres://devdigest:devdigest@localhost:5433/devdigest
   NEXT_PUBLIC_API_BASE: http://localhost:3001
   E2E_BASE_URL: http://localhost:3000
 
@@ -50,6 +52,11 @@ jobs:
         with:
           node-version: 22
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: api/go.mod
+          cache-dependency-path: api/go.sum
+
       # --- Postgres (pgvector) via the repo's compose file ---
       - name: Start Postgres
         run: |
@@ -62,30 +69,20 @@ jobs:
           done
           [ "$(docker inspect -f '{{.State.Health.Status}}' devdigest-postgres)" = "healthy" ]
 
-      # --- API: install, migrate, seed, then start in the background ---
-      - name: Install + migrate + seed (server)
-        working-directory: server
+      # --- API: build, migrate, seed, then start in the background ---
+      # bin/db has the migrations built in. The API reads DATABASE_URL from the
+      # job env and listens on :3001 by default.
+      - name: Build + migrate + seed (api)
+        working-directory: api
         run: |
-          pnpm install --frozen-lockfile
-          pnpm db:migrate
-          pnpm db:seed
-
-      # The API imports @devdigest/reviewer-core's RAW source at runtime (tsx
-      # resolves the tsconfig alias to ../reviewer-core/src), and that source
-      # imports `openai`/`zod`. Without reviewer-core's deps the API crashes at
-      # boot with ERR_MODULE_NOT_FOUND and never becomes healthy. reviewer-core
-      # uses npm (see reviewer-core.yml).
-      - name: Install reviewer-core deps
-        working-directory: reviewer-core
-        run: npm ci
+          make build
+          ./bin/db migrate
+          ./bin/db seed
 
       - name: Start API (:3001)
-        working-directory: server
+        working-directory: api
         run: |
-          # tsx directly (not `pnpm start`): the committed package.json's start
-          # is `node dist/server.js`, which would need a build first. tsx runs
-          # the TS entrypoint as dev does. (server/package.json is skip-worktree.)
-          nohup pnpm exec tsx src/server.ts > "$RUNNER_TEMP/api.log" 2>&1 &
+          nohup ./bin/api > "$RUNNER_TEMP/api.log" 2>&1 &
           echo "waiting for API /health…"
           for i in $(seq 1 30); do
             curl -fsS http://localhost:3001/health >/dev/null 2>&1 && { echo "api up"; break; }
