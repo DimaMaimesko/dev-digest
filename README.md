@@ -158,7 +158,9 @@ Postgres); everything else is hermetic. The browser e2e flows live in
   (not `5432`, so it doesn't clash with a native Postgres). If something else holds
   5433, change the host port in `docker-compose.yml` **and** `DATABASE_URL` in
   `server/.env` to match.
-- **`vector` type errors** — the pgvector extension is enabled by migration `0000`;
-  make sure migrations ran against the Dockerized DB, not a different one.
+- **`vector` type errors** — `pnpm db:migrate` enables the pgvector extension
+  before applying the migrations (`server/src/db/migrate.ts`); the migration files
+  themselves don't. Make sure you migrated with `pnpm db:migrate`, against the
+  Dockerized DB (it ships pgvector), not a different one.
 - **Reset everything** — `docker compose down -v` drops the volume, then re-run
   `./scripts/dev.sh`.
