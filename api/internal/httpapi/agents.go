@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/DimaMaimesko/dev-digest/api/internal/agents"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
 )
 
@@ -78,9 +79,9 @@ func toAgentVersionJSON(v postgres.AgentVersion) (agentVersionJSON, error) {
 		return agentVersionJSON{}, fmt.Errorf("agent %s version %d: %w", v.AgentID, v.Version, err)
 	}
 	switch {
-	case !slices.Contains([]string{"openai", "anthropic", "openrouter"}, cfg.Provider),
-		!slices.Contains([]string{"single-pass", "map-reduce", "auto"}, cfg.Strategy),
-		!slices.Contains([]string{"never", "critical", "warning", "any"}, cfg.CIFailOn),
+	case !slices.Contains(providers, cfg.Provider),
+		!slices.Contains(strategies, cfg.Strategy),
+		!slices.Contains(ciFailOns, cfg.CIFailOn),
 		cfg.Skills == nil:
 		return agentVersionJSON{}, fmt.Errorf("agent %s version %d: config has a missing or unknown provider, strategy, ci_fail_on or skills", v.AgentID, v.Version)
 	}
@@ -191,6 +192,11 @@ func (s *Server) listAgentSkills(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	s.writeAgentSkills(w, r, id)
+}
+
+// writeAgentSkills answers with the agent's linked skills, in order.
+func (s *Server) writeAgentSkills(w http.ResponseWriter, r *http.Request, id uuid.UUID) {
 	links, err := s.queries.ListAgentSkills(r.Context(), id)
 	if err != nil {
 		s.internalError(w, r, err)
@@ -201,6 +207,177 @@ func (s *Server) listAgentSkills(w http.ResponseWriter, r *http.Request) {
 		out = append(out, agentSkillJSON{AgentID: id.String(), SkillID: l.SkillID.String(), Order: l.Order})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// strategies and ciFailOns are the allowed values of an agent's review
+// strategy and CI gate (ReviewStrategy and CiFailOn in the contracts).
+var (
+	strategies = []string{"single-pass", "map-reduce", "auto"}
+	ciFailOns  = []string{"never", "critical", "warning", "any"}
+)
+
+// createAgent answers POST /agents with the new agent, at version 1.
+func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
+	var body map[string]json.RawMessage
+	if !readJSON(w, r, &body) {
+		return
+	}
+	f := fields{body: body}
+	in := agents.New{
+		Name:         deref(f.str("name", true, notEmpty)),
+		Description:  deref(f.str("description", false, nil)),
+		Provider:     deref(f.str("provider", true, among(providers...))),
+		Model:        deref(f.str("model", true, notEmpty)),
+		SystemPrompt: deref(f.str("system_prompt", true, notEmpty)),
+		OutputSchema: f.anyJSON("output_schema"),
+		Strategy:     deref(f.str("strategy", false, among(strategies...))),
+		CIFailOn:     deref(f.str("ci_fail_on", false, among(ciFailOns...))),
+		RepoIntel:    f.boolean("repo_intel"),
+		Enabled:      f.boolean("enabled"),
+	}
+	if len(f.issues) > 0 {
+		invalid(w, f.issues)
+		return
+	}
+	a, err := s.agents.Create(r.Context(), s.workspace, s.user, in)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, toAgentJSON(a))
+}
+
+// updateAgent answers PUT /agents/{id}: it changes the fields in the body.
+// A config change gives the agent a new version; turning it on or off
+// doesn't.
+func (s *Server) updateAgent(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var body map[string]json.RawMessage
+	if !readJSON(w, r, &body) {
+		return
+	}
+	f := fields{body: body}
+	patch := agents.Patch{
+		Name:         f.str("name", false, notEmpty),
+		Description:  f.str("description", false, nil),
+		Provider:     f.str("provider", false, among(providers...)),
+		Model:        f.str("model", false, notEmpty),
+		SystemPrompt: f.str("system_prompt", false, notEmpty),
+		OutputSchema: f.anyJSON("output_schema"),
+		Strategy:     f.str("strategy", false, among(strategies...)),
+		CIFailOn:     f.str("ci_fail_on", false, among(ciFailOns...)),
+		RepoIntel:    f.boolean("repo_intel"),
+		Enabled:      f.boolean("enabled"),
+	}
+	if len(f.issues) > 0 {
+		invalid(w, f.issues)
+		return
+	}
+	a, err := s.agents.Update(r.Context(), s.workspace, id, patch)
+	if errors.Is(err, agents.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "Agent not found")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, toAgentJSON(a))
+}
+
+// deleteAgent answers DELETE /agents/{id}. The agent's versions and skill
+// links go with it; its past runs stay.
+func (s *Server) deleteAgent(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	err := s.agents.Delete(r.Context(), s.workspace, id)
+	if errors.Is(err, agents.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "not_found", "Agent not found")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// changeAgentSkills answers POST /agents/{id}/skills with the agent's linked
+// skills after the change. The body either replaces them all, in order
+// ({"skill_ids": [...]}), or links one ({"skill_id": "...", "order": 2};
+// without an order it goes last).
+func (s *Server) changeAgentSkills(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(w, r)
+	if !ok {
+		return
+	}
+	var body map[string]json.RawMessage
+	if !readJSON(w, r, &body) {
+		return
+	}
+	f := fields{body: body}
+	skillIDs, setAll := f.ids("skill_ids")
+	skillID := f.id("skill_id")
+	order := f.int32("order")
+	switch {
+	case len(f.issues) > 0:
+	case !setAll && skillID == nil:
+		f.bad("Provide skill_ids (set/reorder) or skill_id (link one)")
+	case setAll && hasDuplicates(skillIDs):
+		f.bad("Lists the same skill twice", "skill_ids")
+	}
+	if len(f.issues) > 0 {
+		invalid(w, f.issues)
+		return
+	}
+
+	var err error
+	if setAll {
+		err = s.agents.SetSkills(r.Context(), s.workspace, id, skillIDs)
+	} else {
+		err = s.agents.LinkSkill(r.Context(), s.workspace, id, *skillID, order)
+	}
+	switch {
+	case errors.Is(err, agents.ErrNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "Agent not found")
+		return
+	case errors.Is(err, agents.ErrUnknownSkill):
+		// The TS server answered 500 with the database's foreign key error.
+		key := "skill_id"
+		if setAll {
+			key = "skill_ids"
+		}
+		invalid(w, []issue{{Path: []string{key}, Message: "Not a skill in this workspace"}})
+		return
+	case err != nil:
+		s.internalError(w, r, err)
+		return
+	}
+	s.writeAgentSkills(w, r, id)
+}
+
+func hasDuplicates(ids []uuid.UUID) bool {
+	seen := make(map[uuid.UUID]bool, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			return true
+		}
+		seen[id] = true
+	}
+	return false
+}
+
+// deref returns *p, or "" for nil.
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 // existingAgent reads the {id} of an agent in the workspace. When the ID is

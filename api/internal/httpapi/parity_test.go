@@ -133,13 +133,24 @@ func TestParityWithTypeScript(t *testing.T) {
 		}
 	}
 
-	// Writes that change nothing: an empty update, and invalid ones. For an
-	// error, the status, code and message must match; the details are Zod's
-	// in TS and simpler in Go.
+	// Writes that change nothing: an empty settings update, invalid bodies,
+	// and missing agents. For an error, the status, code and message must
+	// match; the details are Zod's in TS and simpler in Go.
+	type write struct{ method, path, body string }
+	writes := []write{
+		{http.MethodPost, "/agents", `{}`},
+		{http.MethodPost, "/agents", `{"name": null, "provider": "openai", "model": "m", "system_prompt": "p"}`},
+		{http.MethodPut, "/agents/" + missing, `{}`},
+		{http.MethodDelete, "/agents/" + missing, `{}`},
+		{http.MethodPost, "/agents/" + missing + "/skills", `{"skill_ids": []}`},
+	}
 	for _, body := range []string{`{}`, `{"theme": "blue"}`, `{"polling_interval_min": 0}`, `[1]`, `null`} {
-		t.Run("PUT /settings "+body, func(t *testing.T) {
-			tsStatus, ts := sendJSON(t, http.MethodPut, tsURL+"/settings", body)
-			goStatus, gb := sendJSON(t, http.MethodPut, goAPI.URL+"/settings", body)
+		writes = append(writes, write{http.MethodPut, "/settings", body})
+	}
+	for _, wr := range writes {
+		t.Run(wr.method+" "+wr.path+" "+wr.body, func(t *testing.T) {
+			tsStatus, ts := sendJSON(t, wr.method, tsURL+wr.path, wr.body)
+			goStatus, gb := sendJSON(t, wr.method, goAPI.URL+wr.path, wr.body)
 			if tsStatus != goStatus {
 				t.Errorf("status: TS %d, Go %d", tsStatus, goStatus)
 			}

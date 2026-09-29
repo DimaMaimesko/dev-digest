@@ -18,6 +18,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/DimaMaimesko/dev-digest/api/internal/agents"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
@@ -33,6 +34,7 @@ type Server struct {
 	cloneDir  string
 	secrets   *secrets.Store
 	fallback  *url.URL
+	agents    *agents.Store
 }
 
 // Config is what a Server needs.
@@ -65,6 +67,7 @@ func New(cfg Config) *Server {
 		cloneDir:  cfg.CloneDir,
 		secrets:   cfg.Secrets,
 		fallback:  cfg.Fallback,
+		agents:    agents.NewStore(cfg.DB),
 	}
 }
 
@@ -82,6 +85,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /agents/{id}/versions", s.listAgentVersions)
 	mux.HandleFunc("GET /agents/{id}/versions/{version}", s.getAgentVersion)
 	mux.HandleFunc("GET /agents/{id}/skills", s.listAgentSkills)
+	mux.HandleFunc("POST /agents", s.createAgent)
+	mux.HandleFunc("PUT /agents/{id}", s.updateAgent)
+	mux.HandleFunc("DELETE /agents/{id}", s.deleteAgent)
+	mux.HandleFunc("POST /agents/{id}/skills", s.changeAgentSkills)
 	mux.HandleFunc("GET /settings", s.getSettings)
 	mux.HandleFunc("PUT /settings", s.putSettings)
 	mux.HandleFunc("GET /settings/secrets-status", s.secretsStatus)
