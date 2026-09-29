@@ -165,6 +165,8 @@ removed, they become plain regression fixtures.
 | `internal/agents` | Creating and changing agents, with their version history | `server/src/modules/agents/repository.ts`, `service.ts`, `helpers.ts` |
 | `internal/github` | Client for the parts of GitHub's REST API DevDigest uses (pull requests, their files, commits and review comments), written with `net/http`: retries rate limits, and server errors for reads, 30 s per request | `server/src/adapters/github/octokit.ts`, `platform/resilience.ts` |
 | `internal/anthropic` | Anthropic's API through the official Go SDK ([anthropic-sdk-go](https://github.com/anthropics/anthropic-sdk-go)); for now, the model list. The SDK's own credential lookup is off: the key comes from `internal/secrets`, like the others. | `server/src/adapters/llm/anthropic.ts` |
+| `internal/git` | Runs `git` in a repository's clone; for now, the diff a review reads | `server/src/adapters/git/simple-git.ts` |
+| `internal/repointel` | Reads the repo-intel index for a review's context: the repository map and how depended-on each file is. The TS server builds the index until phase 5. | `getRepoMap` and `getFileRank` in `server/src/modules/repo-intel/service.ts` |
 | `internal/pulls` | Saving pull requests from GitHub: the list, missing diff stats, one pull request with its files and commits | the sync code in `server/src/modules/pulls/routes.ts` and `polling/routes.ts` |
 | `internal/secrets` | API keys and tokens: `~/.devdigest/secrets.json` first, then the environment | `server/src/adapters/secrets/local.ts` |
 | `internal/pgtest` | A throwaway, migrated Postgres for tests: one container per test binary, one database per test | `server/test/helpers/pg.ts` |
