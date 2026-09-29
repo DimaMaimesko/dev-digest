@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +23,7 @@ import (
 // TestParityWithTypeScript compares the Go handler with a running TS server,
 // both reading the same database, and requires the same status and JSON. It
 // walks the real data: every repository, its pull requests, and each pull
-// request's detail. Lists are compared in any order, since the web app sorts
+// request's detail; every agent, its skills and each saved version. Lists are compared in any order, since the web app sorts
 // them, and times as instants: right after a GitHub sync the TS server sends
 // GitHub's format ("…41Z"), otherwise JavaScript's ("…41.000Z").
 //
@@ -86,6 +87,22 @@ func TestParityWithTypeScript(t *testing.T) {
 		for _, pull := range pulls {
 			compare("/pulls/" + field(pull, "id"))
 		}
+	}
+
+	for _, path := range []string{"", "/versions", "/versions/1", "/skills"} {
+		compare("/agents/" + missing + path)
+	}
+	agents, _ := compare("/agents").([]any)
+	for _, agent := range agents {
+		base := "/agents/" + field(agent, "id")
+		compare(base)
+		compare(base + "/skills")
+		versions, _ := compare(base + "/versions").([]any)
+		for _, v := range versions {
+			n, _ := v.(map[string]any)["version"].(float64)
+			compare(fmt.Sprintf("%s/versions/%d", base, int(n)))
+		}
+		compare(base + "/versions/999")
 	}
 }
 

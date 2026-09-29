@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -47,6 +48,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /repos", s.listRepos)
 	mux.HandleFunc("GET /repos/{id}/pulls", s.listPulls)
 	mux.HandleFunc("GET /pulls/{id}", s.getPull)
+	mux.HandleFunc("GET /agents", s.listAgents)
+	mux.HandleFunc("GET /agents/{id}", s.getAgent)
+	mux.HandleFunc("GET /agents/{id}/versions", s.listAgentVersions)
+	mux.HandleFunc("GET /agents/{id}/versions/{version}", s.getAgentVersion)
+	mux.HandleFunc("GET /agents/{id}/skills", s.listAgentSkills)
 	mux.HandleFunc("/", notFound)
 
 	return logRequests(s.log, recoverPanics(s.log, cors(s.webOrigin, securityHeaders(mux))))
@@ -88,11 +94,27 @@ func pathID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 	raw := r.PathValue("id")
 	id, err := uuid.Parse(raw)
 	if err != nil || len(raw) != 36 { // uuid.Parse also takes "urn:uuid:…" and no-hyphen forms
-		writeErrorDetails(w, http.StatusUnprocessableEntity, "validation_error", "Request validation failed",
-			[]map[string]any{{"path": []string{"id"}, "message": "Invalid uuid"}})
+		invalidParam(w, "id", "Invalid uuid")
 		return uuid.Nil, false
 	}
 	return id, true
+}
+
+// pathPositiveInt reads a path value as a whole number above zero. For
+// anything else it answers 422 and returns false.
+func pathPositiveInt(w http.ResponseWriter, r *http.Request, name string) (int32, bool) {
+	n, err := strconv.ParseInt(r.PathValue(name), 10, 32)
+	if err != nil || n <= 0 {
+		invalidParam(w, name, "Expected a positive whole number")
+		return 0, false
+	}
+	return int32(n), true
+}
+
+// invalidParam answers 422 for a path value that isn't valid.
+func invalidParam(w http.ResponseWriter, name, message string) {
+	writeErrorDetails(w, http.StatusUnprocessableEntity, "validation_error", "Request validation failed",
+		[]map[string]any{{"path": []string{name}, "message": message}})
 }
 
 // internalError logs err and sends a 500 without its details.

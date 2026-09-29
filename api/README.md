@@ -6,7 +6,9 @@ Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
 **Status:** phase 1 of 6 is done: the review engine runs from the command
 line. Phase 2 has started: the HTTP API serves `/health`, `/health/ready`,
-`GET /repos`, `GET /repos/{id}/pulls` and `GET /pulls/{id}`. The web app still
+`GET /repos`, `GET /repos/{id}/pulls`, `GET /pulls/{id}`, and the agent reads
+`GET /agents`, `/agents/{id}`, `/agents/{id}/versions`,
+`/agents/{id}/versions/{version}` and `/agents/{id}/skills`. The web app still
 uses the TypeScript server.
 
 Pull requests are served from the database. With a GitHub token, the TS server
@@ -30,8 +32,8 @@ curl localhost:3002/repos
 
 `TestParityWithTypeScript` calls a running TS server and the Go handlers on
 the same database, and requires the same status and JSON. It walks the real
-data: every repository, its pull requests, and each pull request's detail,
-plus the not-found cases. Lists are compared in any order, and times as
+data: every repository, its pull requests, and each pull request's detail;
+every agent, its skills and each saved version; plus the not-found cases. Lists are compared in any order, and times as
 instants:
 
 ```sh
@@ -169,12 +171,12 @@ provider at once, so it waits for a real need.
 
 | Case | TypeScript | Go |
 |---|---|---|
-| Order of `GET /repos` | No `ORDER BY`, so whatever order Postgres returns | Oldest first |
+| Order of `GET /repos` and `GET /agents` | No `ORDER BY`, so whatever order Postgres returns | Oldest first |
 | Unknown route | Fastify's own body: `{"message", "error", "statusCode"}` | The API's error envelope: `{"error": {"code": "not_found", "message": ...}}` |
 | No default workspace in the database | Starts; every request fails | Refuses to start and says to run the seed |
 | Order of a PR's files and commits | Whatever order Postgres returns (the tables have no column to sort by) | Files by path, commits by time |
 | Times in `GET /pulls/{id}` | GitHub's format (`…41Z`) right after a sync, JavaScript's (`…41.000Z`) otherwise | Always JavaScript's |
-| `details` of a 422 for a bad ID | Zod's issue objects | `[{"path": ["id"], "message": "Invalid uuid"}]`; same code and message |
+| `details` of a 422 for a bad path value (ID, version number) | Zod's issue objects | `[{"path": ["id"], "message": "Invalid uuid"}]`; same code and message |
 | Listening address | Every network interface (changed in `c477e5a`: both servers now listen on 127.0.0.1 only) | 127.0.0.1 |
 
 Kept as in TS, though odd: the PR list shows a review status (`needs_review`,
