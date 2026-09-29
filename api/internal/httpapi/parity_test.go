@@ -20,8 +20,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/DimaMaimesko/dev-digest/api/internal/anthropic"
 	"github.com/DimaMaimesko/dev-digest/api/internal/github"
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
+	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
@@ -74,6 +76,22 @@ func TestParityWithTypeScript(t *testing.T) {
 			}
 		})
 		return tsBody
+	}
+
+	// compareModels checks a model list. Go sends every field of a model,
+	// null when unknown; TS leaves out the ones its provider doesn't fill.
+	compareModels := func(path string) {
+		t.Helper()
+		t.Run(path, func(t *testing.T) {
+			tsStatus, ts := fetchJSON(t, tsURL+path)
+			goStatus, gb := fetchJSON(t, goAPI.URL+path)
+			if tsStatus != goStatus {
+				t.Errorf("status: TS %d, Go %d", tsStatus, goStatus)
+			}
+			if !reflect.DeepEqual(normalize(withoutNulls(ts)), normalize(withoutNulls(gb))) {
+				t.Errorf("model lists differ\nTS: %v\nGo: %v", ts, gb)
+			}
+		})
 	}
 
 	const missing = "00000000-0000-0000-0000-000000000000"
@@ -130,6 +148,8 @@ func TestParityWithTypeScript(t *testing.T) {
 		{http.MethodPost, "/pulls/" + missing + "/comments", `{"path": "a.go", "line": 0, "body": ""}`},
 		{http.MethodPost, "/pulls/42/comments", `{"path": "a.go", "line": 1, "body": "x"}`},
 		{http.MethodGet, "/pulls/42/comments", ``},
+		{http.MethodGet, "/providers/gemini/models", ``},
+		{http.MethodGet, "/agents/42/models", ``},
 	}
 	for _, body := range []string{`{}`, `{"theme": "blue"}`, `{"polling_interval_min": 0}`, `[1]`, `null`} {
 		writes = append(writes, write{http.MethodPut, "/settings", body})
@@ -153,10 +173,15 @@ func TestParityWithTypeScript(t *testing.T) {
 	for _, path := range []string{"", "/versions", "/versions/1", "/skills"} {
 		compare("/agents/" + missing + path)
 	}
+	for _, provider := range []string{"openai", "anthropic", "openrouter"} {
+		compareModels("/providers/" + provider + "/models")
+	}
+	compare("/agents/" + missing + "/models")
 	agents, _ := compare("/agents").([]any)
 	for _, agent := range agents {
 		base := "/agents/" + field(agent, "id")
 		compare(base)
+		compareModels(base + "/models")
 		compare(base + "/skills")
 		versions, _ := compare(base + "/versions").([]any)
 		for _, v := range versions {
@@ -350,7 +375,35 @@ func parityConfig(t *testing.T) (string, httpapi.Config) {
 		CloneDir:  cloneDir,
 		Secrets:   secrets.New(filepath.Join(home, ".devdigest", "secrets.json"), getenv),
 		Log:       quiet,
+		// Listing models only reads, from the providers.
+		ModelAPIs: httpapi.ModelAPIs{
+			OpenAI:     openai.OpenAIURL,
+			OpenRouter: openai.OpenRouterURL,
+			Anthropic:  anthropic.DefaultURL,
+		},
 	}
+}
+
+// withoutNulls returns v with the null fields of its objects removed, at
+// any depth.
+func withoutNulls(v any) any {
+	switch v := v.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, e := range v {
+			if e != nil {
+				out[k] = withoutNulls(e)
+			}
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, e := range v {
+			out[i] = withoutNulls(e)
+		}
+		return out
+	}
+	return v
 }
 
 // serverDir is the TS server's directory, its working directory when running.

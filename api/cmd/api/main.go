@@ -38,8 +38,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/DimaMaimesko/dev-digest/api/internal/anthropic"
 	"github.com/DimaMaimesko/dev-digest/api/internal/github"
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
+	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
@@ -102,6 +104,11 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			Log:       log,
 			Fallback:  cfg.tsAPI,
 			GitHubAPI: github.DefaultURL,
+			ModelAPIs: httpapi.ModelAPIs{
+				OpenAI:     openai.OpenAIURL,
+				OpenRouter: openai.OpenRouterURL,
+				Anthropic:  anthropic.DefaultURL,
+			},
 		}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -240,5 +241,42 @@ func assertJSON(t *testing.T, got map[string]any, want string) {
 	wb, _ := json.MarshalIndent(w, "", "  ")
 	if string(g) != string(wb) {
 		t.Errorf("request body:\n%s\nwant:\n%s", g, wb)
+	}
+}
+
+func TestModels(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.Method != http.MethodGet || r.URL.Path != "/v1/models" || r.Header.Get("Authorization") != "Bearer sk-test" {
+			t.Errorf("got %s %s, Authorization %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		if r.Header.Get("Content-Type") != "" {
+			t.Errorf("Content-Type %q on a GET", r.Header.Get("Content-Type"))
+		}
+		if calls == 1 {
+			w.WriteHeader(http.StatusBadGateway) // retried
+			return
+		}
+		io.WriteString(w, `{"data": [
+			{"id": "gpt-5", "object": "model", "created": 1754000000, "owned_by": "openai"},
+			{"id": "deepseek/deepseek-v4-flash", "name": "DeepSeek V4 Flash", "created": 1760000000,
+			 "context_length": 163840, "pricing": {"prompt": "0.0000003", "completion": "0.0000012"}}]}`)
+	}))
+	t.Cleanup(srv.Close)
+	c := NewCompatible(srv.URL+"/v1", "sk-test")
+	c.retryDelay = time.Millisecond
+
+	got, err := c.Models(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Model{
+		{ID: "gpt-5", Created: 1754000000},
+		{ID: "deepseek/deepseek-v4-flash", Name: "DeepSeek V4 Flash", Created: 1760000000, ContextLength: 163840,
+			Pricing: &Pricing{Prompt: "0.0000003", Completion: "0.0000012"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Models =\n%+v\nwant\n%+v", got, want)
 	}
 }

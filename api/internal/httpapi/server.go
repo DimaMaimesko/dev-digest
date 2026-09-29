@@ -38,6 +38,7 @@ type Server struct {
 	agents    *agents.Store
 	pulls     *pulls.Store
 	githubAPI string
+	modelAPIs ModelAPIs
 }
 
 // Config is what a Server needs.
@@ -59,6 +60,8 @@ type Config struct {
 	// GitHubAPI is GitHub's API base URL, such as github.DefaultURL. When it
 	// is empty, pull requests are never synced from GitHub.
 	GitHubAPI string
+	// ModelAPIs are the model providers' APIs, for the model lists.
+	ModelAPIs ModelAPIs
 }
 
 // New returns a Server.
@@ -76,6 +79,7 @@ func New(cfg Config) *Server {
 		agents:    agents.NewStore(cfg.DB),
 		pulls:     pulls.NewStore(cfg.DB),
 		githubAPI: cfg.GitHubAPI,
+		modelAPIs: cfg.ModelAPIs,
 	}
 }
 
@@ -100,6 +104,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("PUT /agents/{id}", s.updateAgent)
 	mux.HandleFunc("DELETE /agents/{id}", s.deleteAgent)
 	mux.HandleFunc("POST /agents/{id}/skills", s.changeAgentSkills)
+	mux.HandleFunc("GET /agents/{id}/models", s.listAgentModels)
+	mux.HandleFunc("GET /providers/{id}/models", s.listProviderModels)
 	mux.HandleFunc("GET /settings", s.getSettings)
 	mux.HandleFunc("PUT /settings", s.putSettings)
 	mux.HandleFunc("GET /settings/secrets-status", s.secretsStatus)
