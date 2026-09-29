@@ -142,6 +142,7 @@ func TestRunErrors(t *testing.T) {
 		{"missing prompt file", []string{"-model", "m", "-prompt", "nope.md", "-base-url", "http://x"}, testDiff, nil, "nope.md"},
 		{"no OpenRouter key", []string{"-model", "m", "-prompt", prompt}, testDiff, nil, "set OPENROUTER_API_KEY"},
 		{"no OpenAI key", []string{"-model", "m", "-prompt", prompt, "-provider", "openai"}, testDiff, nil, "set OPENAI_API_KEY"},
+		{"no Anthropic key", []string{"-model", "m", "-prompt", prompt, "-provider", "anthropic"}, testDiff, nil, "set ANTHROPIC_API_KEY"},
 		{"unknown provider", []string{"-model", "m", "-prompt", prompt, "-provider", "gemini"}, testDiff, nil, `-provider "gemini"`},
 		{"unknown strategy", []string{"-model", "m", "-prompt", prompt, "-strategy", "fast"}, testDiff, nil, `-strategy "fast"`},
 		{"empty diff", []string{"-model", "m", "-prompt", prompt}, "", map[string]string{"OPENROUTER_API_KEY": "k"}, "changes no files"},
