@@ -25,6 +25,8 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
 	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/review"
+	"github.com/DimaMaimesko/dev-digest/api/internal/runner"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
@@ -49,6 +51,16 @@ func TestParityWithTypeScript(t *testing.T) {
 	// No GitHubAPI: the Go handler serves what the TS server has just synced
 	// and never writes to the dev database itself. The Go GitHub client is
 	// checked by TestGitHubClientWithTypeScript.
+	//
+	// A runner serves the review routes. The requests below start no run,
+	// and it doesn't mark stale runs failed, which would touch the TS
+	// server's.
+	cfg.Runner = runner.New(runner.Config{
+		DB:  cfg.DB,
+		LLM: func(string) (review.LLM, error) { return nil, errors.New("no model in the parity test") },
+		Log: quiet,
+	})
+	defer cfg.Runner.Close()
 	goAPI := httptest.NewServer(httpapi.New(cfg).Handler())
 	defer goAPI.Close()
 
@@ -150,6 +162,16 @@ func TestParityWithTypeScript(t *testing.T) {
 		{http.MethodGet, "/pulls/42/comments", ``},
 		{http.MethodGet, "/providers/gemini/models", ``},
 		{http.MethodGet, "/agents/42/models", ``},
+		// Review requests that start nothing. (GET /runs/{id}/events isn't
+		// compared: for a run it doesn't know, the TS server never ends it.)
+		{http.MethodPost, "/pulls/" + missing + "/review", `{}`},
+		{http.MethodPost, "/pulls/" + missing + "/review", `{"all": false}`},
+		{http.MethodPost, "/pulls/" + missing + "/review", `{"agentId": "` + missing + `"}`},
+		{http.MethodPost, "/pulls/" + missing + "/review", `{"all": true}`},
+		{http.MethodPost, "/pulls/" + missing + "/review", `{"all": "yes"}`},
+		{http.MethodPost, "/pulls/42/review", `{}`},
+		{http.MethodPost, "/runs/" + missing + "/cancel", `{}`},
+		{http.MethodPost, "/runs/42/cancel", `{}`},
 	}
 	for _, body := range []string{`{}`, `{"theme": "blue"}`, `{"polling_interval_min": 0}`, `[1]`, `null`} {
 		writes = append(writes, write{http.MethodPut, "/settings", body})

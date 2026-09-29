@@ -21,6 +21,7 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/agents"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
 	"github.com/DimaMaimesko/dev-digest/api/internal/pulls"
+	"github.com/DimaMaimesko/dev-digest/api/internal/runner"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
@@ -39,6 +40,7 @@ type Server struct {
 	pulls     *pulls.Store
 	githubAPI string
 	modelAPIs ModelAPIs
+	runner    *runner.Runner
 }
 
 // Config is what a Server needs.
@@ -62,6 +64,9 @@ type Config struct {
 	GitHubAPI string
 	// ModelAPIs are the model providers' APIs, for the model lists.
 	ModelAPIs ModelAPIs
+	// Runner runs reviews. Without one, the review, events and cancel
+	// routes are left to the TS server.
+	Runner *runner.Runner
 }
 
 // New returns a Server.
@@ -80,6 +85,7 @@ func New(cfg Config) *Server {
 		pulls:     pulls.NewStore(cfg.DB),
 		githubAPI: cfg.GitHubAPI,
 		modelAPIs: cfg.ModelAPIs,
+		runner:    cfg.Runner,
 	}
 }
 
@@ -115,6 +121,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /pulls/{id}/runs", s.listRuns)
 	mux.HandleFunc("GET /pulls/{id}/runs/active", s.listActiveRuns)
 	mux.HandleFunc("GET /runs/{id}/trace", s.getRunTrace)
+	if s.runner != nil {
+		mux.HandleFunc("POST /pulls/{id}/review", s.startReview)
+		mux.HandleFunc("GET /runs/{id}/events", s.runEvents)
+		mux.HandleFunc("POST /runs/{id}/cancel", s.cancelRun)
+	}
 	mux.HandleFunc("DELETE /reviews/{id}", s.deleteReview)
 	mux.HandleFunc("DELETE /runs/{id}", s.deleteRun)
 	mux.HandleFunc("POST /findings/{id}/accept", s.acceptFinding)

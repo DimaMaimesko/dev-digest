@@ -5,16 +5,12 @@ A Go rewrite of [`server/`](../server/README.md) and
 Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
 **Status:** phases 1 and 2 of 6 are done. The review engine runs from the
-command line, and the HTTP API serves 21 of the TS server's 22 `GET` routes:
-health, repositories and their index state, pull requests and their GitHub
-comments, agents and the model lists, settings, the workspace, reviews, runs
-and run traces. All of them match the TS server on the dev database (see the
-parity test below). Phase 3, the writes, is under way (see "Writes ported so
-far"): 32 of the TS server's 40 routes are ported, and the rest can be
-forwarded to the TS server.
-
-The last `GET` route, `/runs/{id}/events`, streams a running review
-(phase 4). With a GitHub token, reading pull
+command line, and the HTTP API serves all 22 of the TS server's `GET` routes,
+and runs reviews: 35 of its 40 routes are ported, and the other 5 can be
+forwarded to it. They match the TS server on the dev database (see the parity
+test below). Left on the TS server: adding, refreshing and deleting a
+repository and indexing it (phase 5), and `POST /settings/test-connection`,
+which must wait for those (see "Writes ported so far"). With a GitHub token, reading pull
 requests first syncs them from GitHub, as in TS; without one, or when GitHub
 can't be reached, the saved ones are served.
 
@@ -62,9 +58,20 @@ schema, and saves all keys in one transaction.
 `POST /settings/test-connection` stays on the TS server for now, reached
 through the fallback proxy. It saves API keys to `~/.devdigest/secrets.json`,
 and the TS server reads that file once and caches it: a key saved by the Go
-server wouldn't reach the TS server, which still runs the reviews, until a
-restart. The Go server re-reads the file on every use, so it sees keys the TS
-server saves. It moves once the reviews do (phase 4).
+server wouldn't reach the TS server until a restart. The reviews have moved,
+but adding a repository, still on the TS server, clones it with the cached
+`GITHUB_TOKEN`. The Go server re-reads the file on every use, so it sees keys
+the TS server saves. It moves with the repository routes (phase 5).
+
+**Reviews.** `POST /pulls/{id}/review` starts a run per agent and answers at
+once; `internal/runner` runs them in the background, one after another, and
+saves each review, its findings and a trace. `GET /runs/{id}/events` streams a
+run's live log as server-sent events, and `POST /runs/{id}/cancel` stops one.
+The three moved together: the TS server keeps a run's live log in memory, so a
+run it started can't be followed on the Go server. When the Go server starts,
+it marks runs left running as failed, as TS does; so does the TS server when
+it starts, including runs the Go server is running, so don't restart the TS
+server during a review.
 
 ## Use the web app with the Go server
 
@@ -113,6 +120,13 @@ dev database. `TestGitHubClientWithTypeScript`, in the same run, checks the Go
 GitHub client instead: for up to 3 pull requests of each repository, what the
 TS server has just fetched from GitHub must equal what the Go client reads. It
 only reads, and skips repositories GitHub doesn't know, such as the seed data.
+
+The review routes are compared only with requests that start nothing. To
+check the reviews themselves, the dev database was copied into a throwaway
+one and both servers reviewed the same pull requests with a recording fake
+model, one of them a change to a copy of the dev-digest clone: the prompts
+they sent, from the diff to the callers and the repository map, were
+identical to the byte.
 
 Add each newly ported route to the walk in `internal/httpapi/parity_test.go`.
 
@@ -168,6 +182,7 @@ removed, they become plain regression fixtures.
 | `internal/anthropic` | Anthropic's API through the official Go SDK ([anthropic-sdk-go](https://github.com/anthropics/anthropic-sdk-go)): the model list, and `review.LLM`, which asks for the review as the input of a tool the model must call, as TS does. The SDK's own credential lookup is off: the key comes from `internal/secrets`, like the others. | `server/src/adapters/llm/anthropic.ts` |
 | `internal/git` | Runs `git` in a repository's clone; for now, the diff a review reads | `server/src/adapters/git/simple-git.ts` |
 | `internal/repointel` | A review's context from repo-intel: the repository map and file ranks, read from the index the TS server builds until phase 5; and the callers of the symbols a change declares, found in the clone: `ParseSymbols` parses TypeScript and JavaScript with tree-sitter, `References` finds the lines that use a symbol | `getRepoMap`, `getFileRank` and `getCallerSignatures` in `server/src/modules/repo-intel/service.ts`, `parseSymbols` in `server/src/adapters/astgrep`, `extractReferences` in `server/src/adapters/codeindex/extract.ts` |
+| `internal/runner` | Runs reviews in the background: the diff (git, or the saved patches), the repo-intel context, the review engine, then the review, findings and trace saved in one transaction. Keeps each run's live log in memory for its followers. | `server/src/modules/reviews/run-executor.ts`, `service.ts`, `diff-loader.ts`, `platform/sse.ts`, `platform/run-logger.ts` |
 | `internal/pulls` | Saving pull requests from GitHub: the list, missing diff stats, one pull request with its files and commits | the sync code in `server/src/modules/pulls/routes.ts` and `polling/routes.ts` |
 | `internal/secrets` | API keys and tokens: `~/.devdigest/secrets.json` first, then the environment | `server/src/adapters/secrets/local.ts` |
 | `internal/pgtest` | A throwaway, migrated Postgres for tests: one container per test binary, one database per test | `server/test/helpers/pg.ts` |
@@ -305,6 +320,14 @@ provider at once, so it waits for a real need.
 | Order the callers search reads a clone's files | The file system's (sorted by name on macOS, not on Linux) | Sorted by name |
 | Anthropic: a temperature, and forcing the tool call | Sent to every model. Per Anthropic's docs, Claude Opus 4.7 and later, Sonnet 5, Fable and Mythos refuse a temperature, and Opus 5.5, Fable 5.1 and Mythos 5.1 a forced tool, with a 400. Not reproduced, since that needs a paid call. | Left out for those models. Claude Haiku 4.5, which the agents use, gets both, as before. |
 | Anthropic: asking again after an invalid answer | Sends back the model's `tool_use` block followed by a plain text message. Per the API docs a `tool_use` must be answered with a `tool_result`, so this retry fails with a 400. Not reproduced, for the same reason. | Sends the earlier answer back as text, as for the other providers |
+| Cancelling a run while its model answers | **The review is saved anyway, and the run goes from cancelled back to done.** The cancel is only checked before each model call. Reproduced on a throwaway database. | The model call stops at once. A review is saved only if its run is still running, checked with the run's row locked. |
+| Cancelling, then deleting, a run while its model answers | **Saves a review for a run that no longer exists**, shown in the reviews with no run. Reproduced. | Nothing saved |
+| `GET /runs/{id}/events` for a run the server doesn't know | The stream stays open forever, and the page shows the run as running | The stream ends at once |
+| A finished run's live log | Kept in memory until the server restarts | Kept for 10 minutes; the trace has it after that |
+| `agentId` that isn't a UUID in `POST /pulls/{id}/review` | 500, with Postgres's error message | 404 "Agent not found" |
+| `POST /runs/{id}/cancel` of another workspace's run | Cancelled | Not |
+| The server stops during a review | The run stays "running" until the next start marks it failed | Marked failed at once: "the server stopped during the run" |
+| Rate limits (for example 10 reviews a minute) | Per route, per client | None yet |
 | A GitHub request times out | Not retried. The 30 s limit covers the whole detail fetch (3 to 4 requests). | Retried, like a server error. The limit is 30 s per request. |
 
 Kept as in TS, though odd:
@@ -324,6 +347,8 @@ Kept as in TS, though odd:
 - `POST /repos/{id}/poll` without a GitHub token is a 500 `config_error`.
 - The OpenAI model list keeps GPT models and names containing `o1` or `o3`,
   so `o4-mini` isn't offered.
+- `POST /runs/{id}/cancel` answers `{"ok": true}` for any run, even one that
+  doesn't exist.
 - A reply (`in_reply_to`) still needs `path` and `line`, which GitHub
   ignores for a reply. Only the first 100 comments of a pull request are read.
 

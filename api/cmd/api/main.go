@@ -43,6 +43,8 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
 	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/review"
+	"github.com/DimaMaimesko/dev-digest/api/internal/runner"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
@@ -93,6 +95,27 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	if err != nil {
 		return err // e.g. the port is taken
 	}
+
+	store := secrets.New(cfg.secretsPath, getenv)
+	modelAPIs := httpapi.ModelAPIs{
+		OpenAI:     openai.OpenAIURL,
+		OpenRouter: openai.OpenRouterURL,
+		Anthropic:  anthropic.DefaultURL,
+	}
+	reviews := runner.New(runner.Config{
+		DB:        pool,
+		LLM:       reviewModel(store, modelAPIs),
+		CloneDir:  cfg.cloneDir,
+		RepoIntel: cfg.repoIntel,
+		Log:       log,
+	})
+	defer reviews.Close() // after the server stops: the runs in progress end as failed
+	if n, err := reviews.FailStale(ctx); err != nil {
+		return fmt.Errorf("mark stale runs failed: %w", err)
+	} else if n > 0 {
+		log.Info("marked runs left running by a stopped server as failed", "runs", n)
+	}
+
 	srv := &http.Server{
 		Handler: httpapi.New(httpapi.Config{
 			DB:        pool,
@@ -100,15 +123,12 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			User:      user,
 			WebOrigin: cfg.webOrigin,
 			CloneDir:  cfg.cloneDir,
-			Secrets:   secrets.New(cfg.secretsPath, getenv),
+			Secrets:   store,
 			Log:       log,
 			Fallback:  cfg.tsAPI,
 			GitHubAPI: github.DefaultURL,
-			ModelAPIs: httpapi.ModelAPIs{
-				OpenAI:     openai.OpenAIURL,
-				OpenRouter: openai.OpenRouterURL,
-				Anthropic:  anthropic.DefaultURL,
-			},
+			ModelAPIs: modelAPIs,
+			Runner:    reviews,
 		}).Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -130,6 +150,33 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 	return srv.Shutdown(shutdownCtx)
 }
 
+// reviewModel returns the model client for a provider, with its API key
+// read from the secrets store at each run, so a key saved in the web app
+// takes effect at once.
+func reviewModel(store *secrets.Store, apis httpapi.ModelAPIs) runner.LLMFor {
+	keys := map[string]string{"openai": secrets.OpenAIKey, "openrouter": secrets.OpenRouterKey, "anthropic": secrets.AnthropicKey}
+	return func(provider string) (review.LLM, error) {
+		name, ok := keys[provider]
+		if !ok {
+			return nil, fmt.Errorf("unknown provider %q", provider)
+		}
+		key, err := store.Get(name)
+		if err != nil {
+			return nil, err
+		}
+		if key == "" {
+			return nil, fmt.Errorf("%s is not configured", name)
+		}
+		switch provider {
+		case "openai":
+			return openai.NewCompatible(apis.OpenAI, key), nil
+		case "openrouter":
+			return openai.NewOpenRouter(key), nil
+		}
+		return anthropic.New(apis.Anthropic, key), nil
+	}
+}
+
 // config is the server's settings.
 type config struct {
 	databaseURL string
@@ -139,6 +186,7 @@ type config struct {
 	secretsPath string
 	logLevel    slog.Level
 	tsAPI       *url.URL // the TS server, for routes not ported yet; nil to answer 404
+	repoIntel   bool     // repo-intel context in reviews; on unless REPO_INTEL_ENABLED=false
 }
 
 // loadConfig reads the settings from the environment, with the same names and
@@ -155,6 +203,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		cloneDir:    filepath.Join(home, ".devdigest", "workspace"),
 		secretsPath: filepath.Join(home, ".devdigest", "secrets.json"),
 		logLevel:    slog.LevelInfo,
+		repoIntel:   getenv("REPO_INTEL_ENABLED") != "false",
 	}
 	if v := getenv("DEVDIGEST_CLONE_DIR"); v != "" {
 		dir, err := filepath.Abs(v)

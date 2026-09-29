@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
+	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
 func TestLoadConfig(t *testing.T) {
@@ -25,20 +28,29 @@ func TestLoadConfig(t *testing.T) {
 				cloneDir:    "/home/ann/.devdigest/workspace",
 				secretsPath: "/home/ann/.devdigest/secrets.json",
 				logLevel:    slog.LevelInfo,
+				repoIntel:   true,
 			},
 		},
 		{
 			name: "everything set",
-			env:  map[string]string{"DATABASE_URL": "postgres://x/y", "API_PORT": "3002", "WEB_PORT": "4000", "LOG_LEVEL": "debug", "DEVDIGEST_CLONE_DIR": "/srv/clones"},
+			env: map[string]string{"DATABASE_URL": "postgres://x/y", "API_PORT": "3002", "WEB_PORT": "4000", "LOG_LEVEL": "debug", "DEVDIGEST_CLONE_DIR": "/srv/clones",
+				"REPO_INTEL_ENABLED": "false"},
 			want: config{databaseURL: "postgres://x/y", port: 3002, webOrigin: "http://localhost:4000", logLevel: slog.LevelDebug,
-				cloneDir: "/srv/clones", secretsPath: "/home/ann/.devdigest/secrets.json"},
+				cloneDir: "/srv/clones", secretsPath: "/home/ann/.devdigest/secrets.json", repoIntel: false},
 		},
 		{
 			// .env.example ships LOG_LEVEL= empty.
 			name: "empty LOG_LEVEL means info",
 			env:  map[string]string{"LOG_LEVEL": ""},
 			want: config{databaseURL: "postgres://devdigest:devdigest@localhost:5433/devdigest", port: 3001, webOrigin: "http://localhost:3000", logLevel: slog.LevelInfo,
-				cloneDir: "/home/ann/.devdigest/workspace", secretsPath: "/home/ann/.devdigest/secrets.json"},
+				cloneDir: "/home/ann/.devdigest/workspace", secretsPath: "/home/ann/.devdigest/secrets.json", repoIntel: true},
+		},
+		{
+			// Only "false" turns it off, as in TS.
+			name: "REPO_INTEL_ENABLED=0 leaves it on",
+			env:  map[string]string{"REPO_INTEL_ENABLED": "0"},
+			want: config{databaseURL: "postgres://devdigest:devdigest@localhost:5433/devdigest", port: 3001, webOrigin: "http://localhost:3000", logLevel: slog.LevelInfo,
+				cloneDir: "/home/ann/.devdigest/workspace", secretsPath: "/home/ann/.devdigest/secrets.json", repoIntel: true},
 		},
 		{name: "bad port", env: map[string]string{"API_PORT": "abc"}, wantErr: `API_PORT "abc"`},
 		{name: "no HOME", env: map[string]string{"HOME": ""}, wantErr: "HOME is not set"},
@@ -109,5 +121,28 @@ func TestSilentLogLevel(t *testing.T) {
 	}
 	if cfg.logLevel <= slog.LevelError {
 		t.Errorf("silent level %v would still log errors", cfg.logLevel)
+	}
+}
+
+func TestReviewModel(t *testing.T) {
+	env := map[string]string{"OPENAI_API_KEY": "sk-openai", "ANTHROPIC_API_KEY": "sk-ant"}
+	store := secrets.New(filepath.Join(t.TempDir(), "secrets.json"), func(k string) string { return env[k] })
+	model := reviewModel(store, httpapi.ModelAPIs{OpenAI: "http://openai.test", Anthropic: "http://anthropic.test"})
+	tests := []struct {
+		provider, wantErr string
+	}{
+		{"openai", ""},
+		{"anthropic", ""},
+		{"openrouter", "OPENROUTER_API_KEY is not configured"},
+		{"gemini", `unknown provider "gemini"`},
+	}
+	for _, tt := range tests {
+		llm, err := model(tt.provider)
+		switch {
+		case tt.wantErr == "" && (err != nil || llm == nil):
+			t.Errorf("%s: %v, %v", tt.provider, llm, err)
+		case tt.wantErr != "" && (err == nil || err.Error() != tt.wantErr):
+			t.Errorf("%s: err = %v, want %q", tt.provider, err, tt.wantErr)
+		}
 	}
 }

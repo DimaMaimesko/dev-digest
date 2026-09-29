@@ -17,6 +17,7 @@ import (
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
 	"github.com/DimaMaimesko/dev-digest/api/internal/pgtest"
+	"github.com/DimaMaimesko/dev-digest/api/internal/runner"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
@@ -34,6 +35,7 @@ type fixture struct {
 	env         map[string]string
 	githubAPI   string // empty: no syncing from GitHub
 	modelAPIs   httpapi.ModelAPIs
+	runner      *runner.Runner // nil: the review routes aren't served
 }
 
 const cloneDir = "/work/clones"
@@ -79,6 +81,7 @@ func (f fixture) serve(req *http.Request) *http.Response {
 		Log:       quiet,
 		GitHubAPI: f.githubAPI,
 		ModelAPIs: f.modelAPIs,
+		Runner:    f.runner,
 	}).Handler().ServeHTTP(rec, req)
 	return rec.Result()
 }

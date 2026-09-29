@@ -22,7 +22,8 @@ code should be organized.
   forwards unported routes to TS), a route that writes state the TS server
   caches in memory must move only after every TS route that reads that cache.
   Example: `POST /settings/test-connection` writes `secrets.json`, which TS
-  reads once and caches, so it stays on TS until the reviews move.
+  reads once and caches, so it stays on TS until the repository routes,
+  which clone with the cached `GITHUB_TOKEN`, move (phase 5).
 
 ## Go rules
 
@@ -69,6 +70,7 @@ api/
   internal/pulls    saving pull requests from GitHub
   internal/git      running git in a clone (the review diff)
   internal/repointel review context: repository map, file ranks, callers (tree-sitter)
+  internal/runner   runs reviews in the background; live logs; cancel
   internal/diff     parse unified diffs; which new-file lines a hunk shows
   internal/review   domain: findings, grounding, prompt, LLM interface, structured output, Run
   internal/openai   adapter: OpenAI-compatible chat completions (OpenAI, OpenRouter, Ollama)
@@ -90,7 +92,7 @@ The migration plan has 6 phases. Update this list as phases finish.
 
 1. ✅ Port `reviewer-core` into `internal/review`, with an OpenAI-compatible adapter and the `cmd/review` CLI
 2. ✅ API skeleton and the database-backed read endpoints (18 of 22 `GET` routes; the other 4 need GitHub, the LLM adapters or the run bus). Add each new route to the walk in `parity_test.go`.
-3. **In progress:** write paths. ✅ Fallback proxy (`TS_API_URL`): unported routes are forwarded to the TS server, so the web app can run on the Go server. ✅ `PUT /settings`. ✅ Agent writes (`internal/agents`). ✅ Accept and dismiss findings, delete reviews and runs. ✅ GitHub sync on pull request reads, `POST /repos/{id}/poll` (`internal/github`, `internal/pulls`). ✅ PR comments, read and post. ✅ Model lists (`internal/anthropic`). Left for later phases: `POST /settings/test-connection` (phase 4) and the repository routes (phase 5). `POST /settings/test-connection` waits for phase 4 (see "Order the moves by shared state").
-4. **In progress:** reviews. ✅ Review inputs: `git diff` of the clone, repo map and file ranks (`internal/git`, `internal/repointel`). ✅ Callers of changed symbols (tree-sitter, TS/JS; checked against TS on the whole repo). ✅ Anthropic for reviews (`internal/anthropic` implements `review.LLM`). Next: the run executor, run bus and the review, events and cancel routes (they move together: TS keeps run events in memory), `test-connection`. Test reviews with fake models only.
-5. repo-intel (tree-sitter)
+3. ✅ Write paths. ✅ Fallback proxy (`TS_API_URL`): unported routes are forwarded to the TS server, so the web app can run on the Go server. ✅ `PUT /settings`. ✅ Agent writes (`internal/agents`). ✅ Accept and dismiss findings, delete reviews and runs. ✅ GitHub sync on pull request reads, `POST /repos/{id}/poll` (`internal/github`, `internal/pulls`). ✅ PR comments, read and post. ✅ Model lists (`internal/anthropic`). The repository routes and `POST /settings/test-connection` move in phase 5.
+4. ✅ Reviews: inputs (`internal/git`, `internal/repointel` with the tree-sitter callers), Anthropic for reviews, the run executor (`internal/runner`), and the review, events and cancel routes. Prompts checked byte-for-byte against TS with fake models. `POST /settings/test-connection` moves with phase 5 (see "Order the moves by shared state").
+5. Repositories: git client (clone, fetch), `POST /repos`, refresh, delete, the repo-intel indexer (tree-sitter; the parser is in `internal/repointel`), then `POST /settings/test-connection`
 6. Remove the TS server; migrations and CI move to Go
