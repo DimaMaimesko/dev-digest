@@ -320,3 +320,10 @@ func TestPostRetries(t *testing.T) {
 		})
 	}
 }
+
+func TestLogin(t *testing.T) {
+	c, f := newFake(t, map[string][]string{"/user": {`200 {"login": "octocat", "id": 1}`}})
+	if login, err := c.Login(context.Background()); err != nil || login != "octocat" || f.requests[0].Header.Get("Authorization") != "Bearer ghp_test" {
+		t.Errorf("Login = %q, %v", login, err)
+	}
+}

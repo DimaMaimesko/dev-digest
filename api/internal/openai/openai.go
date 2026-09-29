@@ -209,6 +209,13 @@ func (c *Client) Models(ctx context.Context) ([]Model, error) {
 	return models, nil
 }
 
+// VerifyKey checks the API key with OpenRouter's GET /key, which needs a
+// valid one. (Its model list doesn't: it answers any key.)
+func (c *Client) VerifyKey(ctx context.Context) error {
+	var res json.RawMessage
+	return c.send(ctx, http.MethodGet, "/key", nil, &res)
+}
+
 // send sends a request to path with body, when not nil, and decodes the
 // answer into out. It retries rate limits, server errors and network errors,
 // waiting longer each time.

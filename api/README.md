@@ -6,10 +6,10 @@ Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
 **Status:** phases 1 and 2 of 6 are done. The review engine runs from the
 command line, and the HTTP API serves all 22 of the TS server's `GET` routes,
-runs reviews, and adds, clones, indexes and deletes repositories: 39 of its
-40 routes are ported, and the last can be forwarded to it. They match the TS
-server on the dev database (see the parity test below). Left on the TS
-server: `POST /settings/test-connection` (see "Writes ported so far"). With a GitHub token, reading pull
+runs reviews, and adds, clones, indexes and deletes repositories: all 40 of
+its routes are ported, and match the TS server on the dev database (see the
+parity test below). The web app can run on the Go server alone; the TS server
+still owns the database migrations and the seed (phase 6). With a GitHub token, reading pull
 requests first syncs them from GitHub, as in TS; without one, or when GitHub
 can't be reached, the saved ones are served.
 
@@ -54,10 +54,12 @@ Like reading the comments, it passes through to GitHub; nothing is saved.
 nothing: an empty update and invalid ones. It validates the known preferences like the TS server's Zod
 schema, and saves all keys in one transaction.
 
-`POST /settings/test-connection` stays on the TS server for now, reached
-through the fallback proxy. It saves API keys to `~/.devdigest/secrets.json`,
-which the TS server reads once and caches; no route left on the TS server
-reads it any more, so it can move next.
+`POST /settings/test-connection` saves an API key or GitHub token to
+`~/.devdigest/secrets.json`, when the request has one, then tests the saved
+one with a cheap call: the model list, or GitHub's `GET /user`. It moved
+last: the TS server reads that file once and caches it, so a key the Go
+server saves only reaches it after a restart, and it had to wait until no
+route left on the TS server read that cache.
 
 **The repo-intel index.** After each clone, a job indexes the repository
 (`repointel.Indexer`): the symbols and references of its TypeScript and
@@ -97,9 +99,11 @@ server during a review.
 
 ## Use the web app with the Go server
 
-The Go server can forward every request it doesn't handle yet to the TS
-server, so the web app works fully through it while routes move over. Each
-ported route takes over from TS as soon as it exists.
+The Go server serves every route now. It can still forward a request it
+doesn't handle to the TS server (`TS_API_URL`), which was how the web app
+kept working while routes moved over; without it, such a request is a 404.
+The steps below run both, as during the move; the TS server is only needed
+for its migrations and seed until phase 6.
 
 1. Keep the TS server running on :3001 (`./scripts/dev.sh`).
 2. Start the Go server on :3002, forwarding to it:
@@ -369,6 +373,8 @@ provider at once, so it waits for a real need.
 | Two adds of one repository at once | The second is a 500 with Postgres's error (reproduced) | 201, then 200 |
 | A clone that needs a password and has no token | git may ask for one on the server's terminal | Fails at once |
 | `attempts` of a failed job | 0 | 1 |
+| Testing an OpenRouter key | **Reports any key as working:** it lists models, and OpenRouter's model list answers without a valid key (reproduced: `sk-or-dummy` got 460 models) | Checks the key with `GET /key` first, which refuses a wrong one |
+| Saving a key | Rewrites the file in place: a crash can leave it half-written, and two saves at once can lose a key. Readable only by its owner when created. | Written to a new file, then renamed over it, one save at a time; always readable only by its owner |
 | `POST /repos/{id}/resync` of an unknown repository | 202, and a job that does nothing | 404 |
 | Writing an index | Statement by statement: the index can be read half-written, and a failure leaves it so | One transaction, and one run per repository at a time |
 | A file that takes long to parse | Given up after 2 s | No limit: tree-sitter parses in linear time; the run's 110 s budget still applies |

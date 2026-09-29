@@ -194,6 +194,14 @@ func TestParityWithTypeScript(t *testing.T) {
 		// Not a missing repository: the TS server accepts that (202), Go
 		// answers 404. Never an existing one: that fetches and reindexes.
 		{http.MethodPost, "/repos/42/resync", `{}`},
+		// Connection tests with no key to save. Not GitHub: the Go handler
+		// here has GitHub turned off.
+		{http.MethodPost, "/settings/test-connection", `{}`},
+		{http.MethodPost, "/settings/test-connection", `{"provider": "gemini"}`},
+		{http.MethodPost, "/settings/test-connection", `{"provider": "openai", "key": ""}`},
+		{http.MethodPost, "/settings/test-connection", `{"provider": "openai"}`},
+		{http.MethodPost, "/settings/test-connection", `{"provider": "anthropic"}`},
+		{http.MethodPost, "/settings/test-connection", `{"provider": "openrouter"}`},
 	}
 	for _, repo := range repoList {
 		writes = append(writes, write{http.MethodPost, "/repos", `{"url": "https://github.com/` + field(repo, "full_name") + `"}`})

@@ -153,6 +153,15 @@ func (c *Client) Pull(ctx context.Context, owner, repo string, number int) (Pull
 	return p.pull(), nil
 }
 
+// Login returns the login of the account the token belongs to.
+func (c *Client) Login(ctx context.Context) (string, error) {
+	var user struct {
+		Login string `json:"login"`
+	}
+	err := c.get(ctx, "/user", &user)
+	return user.Login, err
+}
+
 // PullFiles returns the first 100 files a pull request changes.
 func (c *Client) PullFiles(ctx context.Context, owner, repo string, number int) ([]File, error) {
 	var page []struct {

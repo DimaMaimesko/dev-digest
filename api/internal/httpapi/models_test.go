@@ -26,6 +26,7 @@ func modelAPIs(t *testing.T, status int) (httpapi.ModelAPIs, *atomic.Int32) {
 			{"id": "openrouter/auto", "name": "Auto", "pricing": {"prompt": "-1", "completion": "-1"}},
 			{"id": "b/cheap", "name": "Cheap", "context_length": 32768, "pricing": {"prompt": "0.0000001", "completion": "0.0000004"}},
 			{"id": "c/unnamed"}]}`,
+		"/openrouter/key": `{"data": {"label": "sk-or-…"}}`,
 		"/v1/models": `{"data": [
 			{"type": "model", "id": "claude-opus-5", "display_name": "Claude Opus 5", "created_at": "2026-05-01T00:00:00Z"},
 			{"type": "model", "id": "claude-haiku-4-5", "display_name": "Claude Haiku 4.5", "created_at": "2025-10-01T00:00:00Z"}],

@@ -120,6 +120,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /providers/{id}/models", s.listProviderModels)
 	mux.HandleFunc("GET /settings", s.getSettings)
 	mux.HandleFunc("PUT /settings", s.putSettings)
+	mux.HandleFunc("POST /settings/test-connection", s.testConnection)
 	mux.HandleFunc("GET /settings/secrets-status", s.secretsStatus)
 	mux.HandleFunc("GET /workspace", s.getWorkspace)
 	mux.HandleFunc("GET /repos/{id}/index-state", s.getIndexState)

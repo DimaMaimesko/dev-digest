@@ -43,7 +43,8 @@ var githubAnswers = map[string]string{
 		{"id": 2, "path": "limit.go", "line": null, "original_line": 4, "side": "LEFT", "body": "Old",
 		 "user": null, "created_at": "2026-09-03T11:00:00Z", "html_url": "https://github.com/o/n/pull/7#discussion_r2",
 		 "in_reply_to_id": 1}]`,
-	"POST /repos/o/n/pulls/7/comments":                       postedComment,
+	"/user":                            `{"login": "octocat"}`,
+	"POST /repos/o/n/pulls/7/comments": postedComment,
 	"POST /repos/o/n/pulls/7/comments/1234567890123/replies": postedComment,
 }
 

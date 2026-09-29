@@ -280,3 +280,23 @@ func TestModels(t *testing.T) {
 		t.Errorf("Models =\n%+v\nwant\n%+v", got, want)
 	}
 }
+
+func TestVerifyKey(t *testing.T) {
+	for _, tt := range []struct {
+		status int
+		ok     bool
+	}{{http.StatusOK, true}, {http.StatusUnauthorized, false}} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method != http.MethodGet || r.URL.Path != "/api/v1/key" || r.Header.Get("Authorization") != "Bearer sk-or" {
+				t.Errorf("got %s %s", r.Method, r.URL.Path)
+			}
+			w.WriteHeader(tt.status)
+			io.WriteString(w, `{"data": {}}`)
+		}))
+		err := NewCompatible(srv.URL+"/api/v1", "sk-or").VerifyKey(context.Background())
+		if (err == nil) != tt.ok {
+			t.Errorf("status %d: err %v", tt.status, err)
+		}
+		srv.Close()
+	}
+}

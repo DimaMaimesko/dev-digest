@@ -1,9 +1,11 @@
 package secrets_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
@@ -76,5 +78,63 @@ func TestGetMalformedFile(t *testing.T) {
 				t.Errorf("err = %v, want an error naming the file", err)
 			}
 		})
+	}
+}
+
+func TestSet(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "new-dir", "secrets.json")
+	s := secrets.New(path, func(string) string { return "" })
+	if err := s.Set(secrets.OpenAIKey, "sk-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set(secrets.GitHubToken, "ghp-2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Set(secrets.OpenAIKey, "sk-3"); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := os.ReadFile(path)
+	if string(data) != "{\n  \"GITHUB_TOKEN\": \"ghp-2\",\n  \"OPENAI_API_KEY\": \"sk-3\"\n}\n" {
+		t.Errorf("file:\n%s", data)
+	}
+	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v, want 0600", info.Mode().Perm())
+	}
+	if entries, _ := os.ReadDir(filepath.Dir(path)); len(entries) != 1 {
+		t.Errorf("%d files next to it, want none", len(entries)-1)
+	}
+	if v, _ := s.Get(secrets.OpenAIKey); v != "sk-3" {
+		t.Errorf("Get = %q", v)
+	}
+}
+
+// Saves at once lose no key.
+func TestSetConcurrently(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secrets.json")
+	s := secrets.New(path, func(string) string { return "" })
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Go(func() {
+			if err := s.Set(fmt.Sprintf("KEY_%d", i), "v"); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	wg.Wait()
+	for i := range 20 {
+		if v, _ := s.Get(fmt.Sprintf("KEY_%d", i)); v != "v" {
+			t.Errorf("KEY_%d lost", i)
+		}
+	}
+}
+
+func TestSetMalformedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "secrets.json")
+	os.WriteFile(path, []byte("not json"), 0o600)
+	if err := secrets.New(path, os.Getenv).Set(secrets.OpenAIKey, "sk"); err == nil {
+		t.Error("no error; the file would have been replaced")
+	}
+	if data, _ := os.ReadFile(path); string(data) != "not json" {
+		t.Error("the file changed")
 	}
 }

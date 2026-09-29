@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"sync"
 )
 
 // Names of the secrets DevDigest uses.
@@ -20,10 +22,12 @@ const (
 	GitHubToken   = "GITHUB_TOKEN"
 )
 
-// Store reads secrets from a file, then from the environment.
+// Store reads secrets from a file, then from the environment, and saves
+// them to the file.
 type Store struct {
 	path   string
 	getenv func(string) string
+	mu     sync.Mutex // one Set at a time
 }
 
 // New returns a Store that reads the file at path, which may not exist yet,
@@ -67,4 +71,40 @@ func (s *Store) load() (map[string]string, error) {
 		return nil, fmt.Errorf("secrets file %s is not a JSON object of strings: %w", s.path, err)
 	}
 	return stored, nil
+}
+
+// Set saves a secret to the file, keeping the others. The file is readable
+// only by its owner, and replaced in one step: it is never half-written.
+func (s *Store) Set(name, value string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stored, err := s.load()
+	if err != nil {
+		return err
+	}
+	if stored == nil {
+		stored = map[string]string{}
+	}
+	stored[name] = value
+	data, err := json.MarshalIndent(stored, "", "  ")
+	if err != nil {
+		return err
+	}
+	dir := filepath.Dir(s.path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, ".secrets-*.json") // created readable only by its owner
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // after a failure; renamed away otherwise
+	if _, err := tmp.Write(append(data, '\n')); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), s.path)
 }

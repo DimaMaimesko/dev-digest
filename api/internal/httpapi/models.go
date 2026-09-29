@@ -3,7 +3,9 @@ package httpapi
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"slices"
@@ -13,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/anthropic"
+	"github.com/DimaMaimesko/dev-digest/api/internal/github"
 	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
@@ -191,4 +194,86 @@ func completionPrice(m modelJSON) float64 {
 		return math.Inf(1)
 	}
 	return m.Pricing.CompletionPerM
+}
+
+// connTestJSON is the outcome of a connection test (ConnTestResult).
+type connTestJSON struct {
+	Provider string `json:"provider"`
+	OK       bool   `json:"ok"`
+	Message  string `json:"message"`
+}
+
+// secretNames are the secrets a connection test saves and tests, by
+// provider.
+var secretNames = map[string]string{
+	"openai": secrets.OpenAIKey, "anthropic": secrets.AnthropicKey,
+	"openrouter": secrets.OpenRouterKey, "github": secrets.GitHubToken,
+}
+
+// testConnection answers POST /settings/test-connection with {"provider":
+// "openai", "key": "…"}: it saves the key, when there is one, then checks
+// the saved key with a cheap call. A failed test is a 200 with "ok": false.
+func (s *Server) testConnection(w http.ResponseWriter, r *http.Request) {
+	var body map[string]json.RawMessage
+	if !readJSON(w, r, &body) {
+		return
+	}
+	f := fields{body: body}
+	provider := f.str("provider", true, among("openai", "anthropic", "openrouter", "github"))
+	key := f.str("key", false, notEmpty)
+	if len(f.issues) > 0 {
+		invalid(w, f.issues)
+		return
+	}
+	res := connTestJSON{Provider: *provider}
+	msg, err := s.connectionTest(r.Context(), *provider, key)
+	res.OK, res.Message = err == nil, msg
+	if err != nil {
+		res.Message = err.Error()
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) connectionTest(ctx context.Context, provider string, key *string) (string, error) {
+	name := secretNames[provider]
+	if key != nil {
+		if err := s.secrets.Set(name, *key); err != nil {
+			return "", err
+		}
+	}
+	if provider == "github" {
+		token, err := s.secrets.Get(name)
+		if err != nil {
+			return "", err
+		}
+		if token == "" || s.githubAPI == "" {
+			return "", errors.New(name + " is not configured")
+		}
+		login, err := github.New(s.githubAPI, token).Login(ctx)
+		if err != nil {
+			return "", err
+		}
+		return "Connected as @" + login, nil
+	}
+	if provider == "openrouter" {
+		// Its model list answers any key: check the key first.
+		key, err := s.modelKey(name, s.modelAPIs.OpenRouter)
+		if errors.Is(err, errNoModelKey) {
+			return "", errors.New(name + " is not configured")
+		}
+		if err != nil {
+			return "", err
+		}
+		if err := openai.NewCompatible(s.modelAPIs.OpenRouter, key).VerifyKey(ctx); err != nil {
+			return "", err
+		}
+	}
+	models, err := s.fetchModels(ctx, provider)
+	if errors.Is(err, errNoModelKey) {
+		return "", errors.New(name + " is not configured")
+	}
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("OK — %d models available", len(models)), nil
 }
