@@ -14,6 +14,27 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
+## 2026-10-01 · mistake · sqlc makes a computed column non-null
+Symptom: `sum(x)`, `x::float8`, `CAST`, `NULLIF`, a scalar subquery: all generate `float64`, never `*float64`.
+Cause: sqlc infers nullability only for table columns (and LEFT JOINed ones); any expression is non-null.
+Rule: return a count beside it (`count(x) AS priced_runs`) and build the nil in Go, as `ListPulls` does.
+Evidence: api/internal/postgres/queries/pulls.sql (ListPulls); api/internal/httpapi/pulls.go knownCost
+Promoted: no
+
+## 2026-10-01 · context · A new migration fails `pgtest` TestNew
+Symptom: `TestNew` fails right after adding a migration, though the migration is fine.
+Cause: it proves every migration ran by checking the *last* migration's effect.
+Rule: when adding `NNNN_*.sql`, point `pgtest_test.go` at the new migration's effect.
+Evidence: api/internal/pgtest/pgtest_test.go:14
+Promoted: no
+
+## 2026-10-01 · context · A cancelled run never gets its outcome columns
+Symptom: a cancelled run keeps NULL tokens/duration; a new column set in `FinishRun` stays empty for it.
+Cause: `CancelRun` sets `status = 'cancelled'` at once; `FinishRun` updates only `WHERE status = 'running'`.
+Rule: to record anything for a cancelled run, use a separate UPDATE without the status filter.
+Evidence: api/internal/postgres/queries/runs_write.sql:16, :44; api/internal/runner/runner.go:293
+Promoted: no
+
 ## 2026-09-30 · mistake · `make check` passes, but the database tests never ran
 Symptom: green `make check` locally, red in CI.
 Cause: tests that need Postgres (`internal/pgtest`) **skip** when Docker isn't running.

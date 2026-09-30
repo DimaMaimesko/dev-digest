@@ -38,10 +38,14 @@ The main screen of the product: read a PR, run agents on it, act on their findin
 ## Run history and trace
 - The history lists every run (done, failed with its error, cancelled, running) interleaved
   with the PR's commits, newest first, so it's clear which commit each run reviewed.
+- An ended run (done, failed or cancelled) shows its cost beside its time; a running run, or
+  one whose cost is unknown, shows none.
 - Deleting a run asks for confirmation and deletes its review too.
-- Clicking a run opens the trace drawer (`?trace=<runId>`): configuration, stats, prompt
-  assembly, tool calls, raw output, and the live log with a filter.
+- Clicking a run opens the trace drawer (`?trace=<runId>`): configuration, stats (duration,
+  tokens, findings, cost — "—" when unknown), prompt assembly, tool calls, raw output, and the
+  live log with a filter.
 
 ## Relied on by e2e
 Flow 04 (Agent runs tab: "request changes", "2 findings", the finding
-"Hardcoded Stripe secret key in commit") and flow 05 (Files changed tab: `src/config.ts`).
+"Hardcoded Stripe secret key in commit", the seeded run's cost "$0.0021" and the trace's
+"COST" stat) and flow 05 (Files changed tab: `src/config.ts`).

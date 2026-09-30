@@ -4,6 +4,7 @@ import React from "react";
 import { useTranslations } from "next-intl";
 import { Badge, Icon, CircularScore, type IconName } from "@devdigest/ui";
 import type { RunSummary, PrCommit } from "@devdigest/shared";
+import { exactCost, formatCost } from "@/lib/format-cost";
 
 /**
  * PR timeline — every agent run interleaved with the PR's commits, newest-first
@@ -15,6 +16,10 @@ import type { RunSummary, PrCommit } from "@devdigest/shared";
  * run that found blockers reads "rejected" (red), never a green "done". Outcome
  * is derived from the denormalized blocker/finding counts on the run row, so it
  * matches the CI gate (deterministic) rather than the model's verdict.
+ *
+ * Beside its time, a run shows what it cost once it has ended — failed and
+ * cancelled runs too, since their model calls were billed. Unknown cost (the
+ * provider doesn't report it) shows nothing here; the trace says "—".
  */
 
 type Outcome = { key: string; color: string; bg: string; icon: IconName };
@@ -197,6 +202,11 @@ export function RunHistory({
             </div>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, fontSize: 11, color: "var(--text-muted)", flexShrink: 0 }}>
               {r.ran_at && <span>{new Date(r.ran_at).toLocaleTimeString()}</span>}
+              {r.status !== "running" && r.cost_usd != null && (
+                <span className="mono" title={exactCost(r.cost_usd)}>
+                  {formatCost(r.cost_usd)}
+                </span>
+              )}
             </div>
             <button
               type="button"

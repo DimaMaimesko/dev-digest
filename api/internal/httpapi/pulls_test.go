@@ -97,8 +97,44 @@ func TestListPullsJSON(t *testing.T) {
 		"branch": "feat", "base": "main", "head_sha": "head",
 		"additions": 10, "deletions": 2, "files_count": 3, "status": "needs_review",
 		"opened_at": "2026-09-01T08:00:00.000Z", "updated_at": "2026-09-02T09:30:00.123Z",
-		"score": null
+		"score": null, "cost_usd": null
 	}]`)
+}
+
+// A pull request's cost is the sum of its runs' known costs, whatever their
+// status; it is null when no run's cost is known.
+func TestListPullsCost(t *testing.T) {
+	f := newFixture(t)
+	repo := f.insertRepo(t, f.workspace, "o/n")
+	priced := f.insertPull(t, repo, 1, "open", "NULL", "now()")
+	unpriced := f.insertPull(t, repo, 2, "open", "NULL", "now()")
+	f.insertPull(t, repo, 3, "open", "NULL", "now()") // never run
+	free := f.insertPull(t, repo, 4, "open", "NULL", "now()")
+	for _, r := range []struct {
+		pull   uuid.UUID
+		status string
+		cost   string
+	}{
+		{priced, "done", "0.25"}, {priced, "failed", "0.5"}, {priced, "cancelled", "NULL"},
+		{unpriced, "done", "NULL"},
+		{free, "done", "0"},
+	} {
+		f.exec(t, `INSERT INTO agent_runs (workspace_id, pr_id, status, cost_usd) VALUES ($1, $2, $3, `+r.cost+`)`,
+			f.workspace, r.pull, r.status)
+	}
+
+	var got []struct {
+		Number  int      `json:"number"`
+		CostUSD *float64 `json:"cost_usd"`
+	}
+	decode(t, f.get(t, "/repos/"+repo.String()+"/pulls"), http.StatusOK, &got)
+	want := map[int]*float64{1: new(0.75), 2: nil, 3: nil, 4: new(0.0)}
+	for _, g := range got {
+		w := want[g.Number]
+		if (g.CostUSD == nil) != (w == nil) || (w != nil && *g.CostUSD != *w) {
+			t.Errorf("pull %d cost = %v, want %v", g.Number, costOf(g.CostUSD), costOf(w))
+		}
+	}
 }
 
 func TestGetPull(t *testing.T) {
@@ -186,6 +222,14 @@ func TestPullsInvalidID(t *testing.T) {
 }
 
 func ptr(n int) *int { return &n }
+
+// costOf shows a cost in a test message: its value, or nil.
+func costOf(c *float64) any {
+	if c == nil {
+		return nil
+	}
+	return *c
+}
 
 func equalPtr(a, b *int) bool { return (a == nil && b == nil) || (a != nil && b != nil && *a == *b) }
 

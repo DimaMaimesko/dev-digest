@@ -19,12 +19,12 @@ import (
 
 // Client asks models for JSON through a chat completions API.
 type Client struct {
-	baseURL       string
-	apiKey        string
-	sendSessionID bool
-	http          *http.Client
-	retries       int           // extra attempts after a rate limit, server or network error
-	retryDelay    time.Duration // wait before the first retry; doubles after each one
+	baseURL    string
+	apiKey     string
+	openRouter bool // sends the fields only OpenRouter accepts
+	http       *http.Client
+	retries    int           // extra attempts after a rate limit, server or network error
+	retryDelay time.Duration // wait before the first retry; doubles after each one
 }
 
 // Client is an LLM for the review package.
@@ -43,10 +43,11 @@ func New(apiKey string) *Client {
 
 // NewOpenRouter returns a client for OpenRouter. It sends each request's
 // SessionID, so the calls of one review are grouped in the OpenRouter
-// dashboard. (OpenAI rejects fields it doesn't know, so New doesn't.)
+// dashboard, and asks for each call's cost. (OpenAI rejects fields it doesn't
+// know, so New doesn't.)
 func NewOpenRouter(apiKey string) *Client {
 	c := NewCompatible(OpenRouterURL, apiKey)
-	c.sendSessionID = true
+	c.openRouter = true
 	return c
 }
 
@@ -86,6 +87,7 @@ func (c *Client) CompleteJSON(ctx context.Context, req review.JSONRequest) (revi
 		Text:      res.Choices[0].Message.Content,
 		TokensIn:  res.Usage.PromptTokens,
 		TokensOut: res.Usage.CompletionTokens,
+		CostUSD:   res.Usage.Cost,
 	}, nil
 }
 
@@ -98,6 +100,12 @@ type chatRequest struct {
 	Temperature    *float64       `json:"temperature,omitempty"`
 	ResponseFormat responseFormat `json:"response_format"`
 	SessionID      string         `json:"session_id,omitempty"`
+	Usage          *usageRequest  `json:"usage,omitempty"`
+}
+
+// usageRequest asks OpenRouter to report what a call cost.
+type usageRequest struct {
+	Include bool `json:"include"`
 }
 
 type chatMessage struct {
@@ -123,8 +131,9 @@ type chatResponse struct {
 		} `json:"message"`
 	} `json:"choices"`
 	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
+		PromptTokens     int      `json:"prompt_tokens"`
+		CompletionTokens int      `json:"completion_tokens"`
+		Cost             *float64 `json:"cost"` // US dollars; OpenRouter only
 	} `json:"usage"`
 	Error *apiError `json:"error"`
 }
@@ -150,8 +159,9 @@ func (c *Client) chatRequest(req review.JSONRequest) chatRequest {
 		zero := 0.0
 		r.Temperature = &zero
 	}
-	if c.sendSessionID {
+	if c.openRouter {
 		r.SessionID = req.SessionID
+		r.Usage = &usageRequest{Include: true}
 	}
 	return r
 }

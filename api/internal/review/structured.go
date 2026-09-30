@@ -42,11 +42,10 @@ var ErrInvalidReview = errors.New("model gave no valid review")
 
 // answer is a valid Review from a model, with what it took to get it.
 type answer struct {
-	Review    Review
-	Raw       string // the model's accepted answer, for the run trace
-	Attempts  int
-	TokensIn  int // summed over all attempts
-	TokensOut int
+	Review   Review
+	Raw      string // the model's accepted answer, for the run trace
+	Attempts int
+	Usage    // summed over all attempts
 }
 
 // model is a model to ask for reviews, with the settings every call of one
@@ -61,6 +60,9 @@ type model struct {
 // askForReview sends the assembled prompt to the model and reads the answer
 // as a Review. When the answer isn't a valid Review, it shows the model what
 // was wrong and asks again, up to m.maxRetries more times.
+//
+// When it fails, the answer it returns holds only the Usage of the attempts
+// that were answered: they were paid for all the same.
 func (m model) askForReview(ctx context.Context, a Assembly) (answer, error) {
 	req := JSONRequest{
 		Model:      m.name,
@@ -71,26 +73,20 @@ func (m model) askForReview(ctx context.Context, a Assembly) (answer, error) {
 		SessionID:  m.sessionID,
 	}
 	var (
-		tokensIn, tokensOut int
-		problem             error
+		spent   Usage
+		problem error
 	)
 	for attempt := 1; attempt <= m.maxRetries+1; attempt++ {
 		res, err := m.llm.CompleteJSON(ctx, req)
+		// Counted even with an error: a refusal is an answer, and is paid for.
+		spent.Add(res)
 		if err != nil {
-			return answer{}, fmt.Errorf("ask %s for a review: %w", m.name, err)
+			return answer{Usage: spent}, fmt.Errorf("ask %s for a review: %w", m.name, err)
 		}
-		tokensIn += res.TokensIn
-		tokensOut += res.TokensOut
 
 		r, err := parseReview(res.Text)
 		if err == nil {
-			return answer{
-				Review:    r,
-				Raw:       res.Text,
-				Attempts:  attempt,
-				TokensIn:  tokensIn,
-				TokensOut: tokensOut,
-			}, nil
+			return answer{Review: r, Raw: res.Text, Attempts: attempt, Usage: spent}, nil
 		}
 		problem = err
 		req.Messages = append(req.Messages,
@@ -98,7 +94,7 @@ func (m model) askForReview(ctx context.Context, a Assembly) (answer, error) {
 			Message{Role: RoleUser, Content: repairRequest(problem)},
 		)
 	}
-	return answer{}, fmt.Errorf("%w from %s in %d attempts; last problem: %v",
+	return answer{Usage: spent}, fmt.Errorf("%w from %s in %d attempts; last problem: %v",
 		ErrInvalidReview, m.name, m.maxRetries+1, problem)
 }
 

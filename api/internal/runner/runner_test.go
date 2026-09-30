@@ -42,6 +42,7 @@ type fakeLLM struct {
 	err       error
 	gate      chan struct{}
 	ignoreCtx bool
+	cost      *float64      // each answer's cost; nil like a provider that doesn't say
 	started   chan struct{} // gets a value when a call starts
 
 	mu       sync.Mutex
@@ -66,8 +67,10 @@ func (f *fakeLLM) CompleteJSON(ctx context.Context, req review.JSONRequest) (rev
 			}
 		}
 	}
-	return review.JSONResponse{Text: f.answer, TokensIn: 100, TokensOut: 20}, f.err
+	return review.JSONResponse{Text: f.answer, TokensIn: 100, TokensOut: 20, CostUSD: f.cost}, f.err
 }
+
+func cost(f float64) *float64 { return &f }
 
 // fixture is a database with a pull request #7 of o/n that changes
 // src/config.ts, and a runner whose model is llm.
@@ -167,6 +170,7 @@ type run struct {
 	Status, Error, Grounding                  string
 	DurationMs, TokensIn, TokensOut, Findings int
 	Score, Blockers                           *int
+	CostUSD                                   *float64
 	Reviews, SavedFindings                    int
 	Trace                                     map[string]any
 }
@@ -176,8 +180,8 @@ func (f *fixture) run(t *testing.T, id uuid.UUID) run {
 	var r run
 	var errText, grounding *string
 	var ms, in, out, findings *int
-	err := f.db.QueryRow(context.Background(), `SELECT status, error, grounding, duration_ms, tokens_in, tokens_out, findings_count, score, blockers
-		FROM agent_runs WHERE id = $1`, id).Scan(&r.Status, &errText, &grounding, &ms, &in, &out, &findings, &r.Score, &r.Blockers)
+	err := f.db.QueryRow(context.Background(), `SELECT status, error, grounding, duration_ms, tokens_in, tokens_out, findings_count, score, blockers, cost_usd
+		FROM agent_runs WHERE id = $1`, id).Scan(&r.Status, &errText, &grounding, &ms, &in, &out, &findings, &r.Score, &r.Blockers, &r.CostUSD)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,6 +205,28 @@ func (f *fixture) run(t *testing.T, id uuid.UUID) run {
 		json.Unmarshal(trace, &r.Trace)
 	}
 	return r
+}
+
+// traceStats is a saved trace's stats.
+func (r run) traceStats() map[string]any {
+	stats, _ := r.Trace["stats"].(map[string]any)
+	return stats
+}
+
+// show prints a cost in a test message: its value, or nil.
+func show(c *float64) any {
+	if c == nil {
+		return nil
+	}
+	return *c
+}
+
+// hasCost reports whether got is want, both possibly nil (unknown).
+func hasCost(got, want *float64) bool {
+	if got == nil || want == nil {
+		return got == want
+	}
+	return *got == *want
 }
 
 // traceLog is the messages of a saved trace's log.
@@ -248,7 +274,7 @@ func hasPrefixes(t *testing.T, what string, msgs []string, prefixes ...string) {
 }
 
 func TestRunSavesTheReview(t *testing.T) {
-	f := newFixture(t, &fakeLLM{answer: reviewJSON}, nil)
+	f := newFixture(t, &fakeLLM{answer: reviewJSON, cost: cost(0.0125)}, nil)
 	// The gate never fails: no blockers, though a finding is kept.
 	agent := f.agent(t, "General", "ci_fail_on = 'never'")
 	id := f.start(t, agent)[0]
@@ -259,8 +285,11 @@ func TestRunSavesTheReview(t *testing.T) {
 	if r.Status != "done" || r.Error != "" || r.Grounding != "1/2 passed" || r.Findings != 1 ||
 		r.TokensIn != 100 || r.TokensOut != 20 || r.Reviews != 1 || r.SavedFindings != 1 ||
 		r.Score == nil || *r.Score != 65 || // 100 - 35 for the critical finding kept, not the model's 42
-		r.Blockers == nil || *r.Blockers != 0 || r.DurationMs < 0 {
+		r.Blockers == nil || *r.Blockers != 0 || r.DurationMs < 0 || !hasCost(r.CostUSD, cost(0.0125)) {
 		t.Errorf("run = %+v", r)
+	}
+	if stats := r.traceStats(); stats["cost_usd"] != 0.0125 || stats["tokens_in"] != 100.0 {
+		t.Errorf("trace stats = %v", stats)
 	}
 	var reviewed string
 	f.scan(t, &reviewed, `SELECT last_reviewed_sha FROM pull_requests WHERE id = $1`, f.pull.ID)
@@ -274,9 +303,9 @@ func TestRunSavesTheReview(t *testing.T) {
 		"Reviewing 1 changed file(s) in one pass", "Reviewing all files in one pass", "all files: 2 candidate finding(s)",
 		"Citation grounding: 1/2 passed", "Persisted review ",
 	}
-	hasPrefixes(t, "live log", live, append(steps, "Run complete; trace persisted")...)
+	hasPrefixes(t, "live log", live, append(steps, "Run complete — $0.0125; trace persisted")...)
 	hasPrefixes(t, "trace log", r.traceLog(), steps...)
-	if slices.Contains(r.traceLog(), "Run complete; trace persisted") {
+	if slices.Contains(r.traceLog(), "Run complete — $0.0125; trace persisted") {
 		t.Error("the trace's log has the line announcing it was saved; TS's doesn't")
 	}
 
@@ -326,14 +355,33 @@ func TestRunFails(t *testing.T) {
 			f.runner.Wait()
 			r := f.run(t, id)
 			if r.Status != "failed" || !strings.Contains(r.Error, tt.wantErr) || r.Reviews != 0 || r.Grounding != "0/0 passed" ||
-				r.Findings != 0 || r.Score != nil || r.Blockers != nil {
+				r.Findings != 0 || r.Score != nil || r.Blockers != nil || r.CostUSD != nil {
 				t.Errorf("run = %+v", r)
+			}
+			if stats := r.traceStats(); stats["cost_usd"] != nil {
+				t.Errorf("trace cost = %v, want null: no call reported one", stats["cost_usd"])
 			}
 			hasPrefixes(t, "trace log", r.traceLog(), "Loading PR diff…", "Starting review", tt.logLine)
 			if a := r.Trace["prompt_assembly"].(map[string]any); a["system"] != "You review code." || a["user"] != "" {
 				t.Errorf("failure trace prompt_assembly = %v", a)
 			}
 		})
+	}
+}
+
+// A failed run keeps what its answered model calls took: they were paid for.
+func TestFailedRunKeepsItsUsage(t *testing.T) {
+	f := newFixture(t, &fakeLLM{answer: "not a review", cost: cost(0.01)}, nil)
+	id := f.start(t, f.agent(t, "General"))[0]
+	f.runner.Wait()
+
+	// 1 call + 2 retries, none valid.
+	r := f.run(t, id)
+	if r.Status != "failed" || r.TokensIn != 300 || r.TokensOut != 60 || !hasCost(r.CostUSD, cost(0.03)) {
+		t.Errorf("run = %+v", r)
+	}
+	if stats := r.traceStats(); stats["tokens_in"] != 300.0 || stats["tokens_out"] != 60.0 || stats["cost_usd"] != 0.03 {
+		t.Errorf("trace stats = %v", stats)
 	}
 }
 
@@ -374,7 +422,7 @@ func TestCancelDuringTheModelCall(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			llm := &fakeLLM{answer: reviewJSON, gate: make(chan struct{}), ignoreCtx: tt.ignoreCtx, started: make(chan struct{}, 1)}
+			llm := &fakeLLM{answer: reviewJSON, gate: make(chan struct{}), ignoreCtx: tt.ignoreCtx, cost: cost(0.02), started: make(chan struct{}, 1)}
 			f := newFixture(t, llm, nil)
 			id := f.start(t, f.agent(t, "General"))[0]
 			<-llm.started
@@ -401,6 +449,14 @@ func TestCancelDuringTheModelCall(t *testing.T) {
 			r := f.run(t, id)
 			if r.Status != "cancelled" || r.Error != "" {
 				t.Errorf("run = %+v", r)
+			}
+			// An answer that came anyway was paid for; a stopped call wasn't answered.
+			wantIn, wantCost := 0, (*float64)(nil)
+			if tt.ignoreCtx {
+				wantIn, wantCost = 100, cost(0.02)
+			}
+			if r.TokensIn != wantIn || !hasCost(r.CostUSD, wantCost) {
+				t.Errorf("usage = %d tokens in, cost %v; want %d and %v", r.TokensIn, show(r.CostUSD), wantIn, show(wantCost))
 			}
 			if !tt.ignoreCtx {
 				hasPrefixes(t, "trace log", r.traceLog(), "Cancellation requested — stopping…", "Run cancelled by user")

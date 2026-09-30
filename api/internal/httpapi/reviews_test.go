@@ -107,8 +107,8 @@ func TestListRuns(t *testing.T) {
 	agent := f.insertAgent(t, f.workspace, "General", "NULL", "2026-09-01")
 	done := f.insertID(t, `INSERT INTO agent_runs
 		(workspace_id, pr_id, agent_id, provider, model, status, duration_ms, tokens_in, tokens_out,
-		 findings_count, grounding, score, blockers, ran_at)
-		VALUES ($1, $2, $3, 'openrouter', 'm', 'done', 4200, 900, 150, 1, '1/2 passed', 65, 1,
+		 cost_usd, findings_count, grounding, score, blockers, ran_at)
+		VALUES ($1, $2, $3, 'openrouter', 'm', 'done', 4200, 900, 150, 0.0123, 1, '1/2 passed', 65, 1,
 		        '2026-09-01 10:00:00+00') RETURNING id`, f.workspace, pull, agent)
 	failed := f.insertID(t, `INSERT INTO agent_runs (workspace_id, pr_id, agent_id, status, error, ran_at)
 		VALUES ($1, $2, NULL, 'failed', 'rate limited', '2026-09-02 10:00:00+00') RETURNING id`, f.workspace, pull)
@@ -119,7 +119,7 @@ func TestListRuns(t *testing.T) {
 	f.insertRun(t, other, pull, nil, "running", "2026-09-03")
 
 	nulls := `"provider": null, "model": null, "duration_ms": null, "tokens_in": null, "tokens_out": null,
-		"findings_count": null, "grounding": null, "score": null, "blockers": null`
+		"cost_usd": null, "findings_count": null, "grounding": null, "score": null, "blockers": null`
 	assertJSON(t, f.get(t, "/pulls/"+pull.String()+"/runs"), http.StatusOK, `[
 		{"run_id": "`+running.String()+`", "agent_id": "`+agent.String()+`", "agent_name": "General",
 		 "status": "running", "error": null, "ran_at": "2026-09-03T10:00:00.000Z", `+nulls+`},
@@ -127,7 +127,7 @@ func TestListRuns(t *testing.T) {
 		 "status": "failed", "error": "rate limited", "ran_at": "2026-09-02T10:00:00.000Z", `+nulls+`},
 		{"run_id": "`+done.String()+`", "agent_id": "`+agent.String()+`", "agent_name": "General",
 		 "provider": "openrouter", "model": "m", "status": "done", "error": null, "duration_ms": 4200,
-		 "tokens_in": 900, "tokens_out": 150, "findings_count": 1, "grounding": "1/2 passed",
+		 "tokens_in": 900, "tokens_out": 150, "cost_usd": 0.0123, "findings_count": 1, "grounding": "1/2 passed",
 		 "ran_at": "2026-09-01T10:00:00.000Z", "score": 65, "blockers": 1}
 	]`)
 

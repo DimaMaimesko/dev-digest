@@ -11,15 +11,15 @@ func TestNew(t *testing.T) {
 	ctx := context.Background()
 	a, b := pgtest.New(t), pgtest.New(t)
 
-	// Every migration ran: the last one (0009) dropped agent_runs.cost_usd.
-	var hasCost bool
-	err := a.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		WHERE table_name = 'agent_runs' AND column_name = 'cost_usd')`).Scan(&hasCost)
+	// Every migration ran: the last one (0010) added agent_runs_pr_id_idx.
+	var hasIndex bool
+	err := a.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_indexes
+		WHERE tablename = 'agent_runs' AND indexname = 'agent_runs_pr_id_idx')`).Scan(&hasIndex)
 	if err != nil {
 		t.Fatalf("query schema: %v", err)
 	}
-	if hasCost {
-		t.Error("agent_runs.cost_usd exists; migration 0009 should have dropped it")
+	if !hasIndex {
+		t.Error("agent_runs_pr_id_idx is missing; migration 0010 should have added it")
 	}
 
 	// The two databases are separate.

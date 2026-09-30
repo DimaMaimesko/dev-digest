@@ -182,7 +182,7 @@ func (q *Queries) ListReviews(ctx context.Context, prID uuid.UUID) ([]ListReview
 
 const listRuns = `-- name: ListRuns :many
 SELECT r.id, r.agent_id, a.name AS agent_name, r.provider, r.model, r.status,
-       r.error, r.duration_ms, r.tokens_in, r.tokens_out, r.findings_count,
+       r.error, r.duration_ms, r.tokens_in, r.tokens_out, r.cost_usd, r.findings_count,
        r.grounding, r.ran_at, r.score, r.blockers
 FROM agent_runs r
 LEFT JOIN agents a ON a.id = r.agent_id
@@ -206,6 +206,7 @@ type ListRunsRow struct {
 	DurationMs    *int32
 	TokensIn      *int32
 	TokensOut     *int32
+	CostUsd       *float64
 	FindingsCount *int32
 	Grounding     *string
 	RanAt         time.Time
@@ -234,6 +235,7 @@ func (q *Queries) ListRuns(ctx context.Context, arg ListRunsParams) ([]ListRunsR
 			&i.DurationMs,
 			&i.TokensIn,
 			&i.TokensOut,
+			&i.CostUsd,
 			&i.FindingsCount,
 			&i.Grounding,
 			&i.RanAt,

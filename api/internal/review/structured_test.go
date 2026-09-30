@@ -177,12 +177,16 @@ func TestAskForReview(t *testing.T) {
 	t.Run("never valid", func(t *testing.T) {
 		llm := &fakeLLM{answers: []string{"no", "still no", "nope"}}
 
-		_, err := model{llm: llm, name: "m", maxRetries: 2}.askForReview(context.Background(), prompt)
+		ans, err := model{llm: llm, name: "m", maxRetries: 2}.askForReview(context.Background(), prompt)
 		if !errors.Is(err, ErrInvalidReview) {
 			t.Fatalf("err = %v, want ErrInvalidReview", err)
 		}
 		if len(llm.reqs) != 3 {
 			t.Errorf("made %d calls, want 3 (1 + 2 retries)", len(llm.reqs))
+		}
+		// The three answers were paid for.
+		if ans.TokensIn != 300 || ans.TokensOut != 30 {
+			t.Errorf("Usage = %d/%d tokens, want 300/30", ans.TokensIn, ans.TokensOut)
 		}
 	})
 

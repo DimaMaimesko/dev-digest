@@ -11,7 +11,7 @@ import (
 )
 
 // traceJSON is the document saved for each run, which the trace view shows
-// (RunTrace in server/src/vendor/shared/contracts/trace.ts).
+// (RunTrace in client/src/vendor/shared/contracts/trace.ts).
 type traceJSON struct {
 	Config struct {
 		Agent    string `json:"agent"`
@@ -22,11 +22,12 @@ type traceJSON struct {
 		Source   string `json:"source"`
 	} `json:"config"`
 	Stats struct {
-		DurationMs int64  `json:"duration_ms"`
-		TokensIn   int    `json:"tokens_in"`
-		TokensOut  int    `json:"tokens_out"`
-		Findings   int    `json:"findings"`
-		Grounding  string `json:"grounding"`
+		DurationMs int64    `json:"duration_ms"`
+		TokensIn   int      `json:"tokens_in"`
+		TokensOut  int      `json:"tokens_out"`
+		CostUSD    *float64 `json:"cost_usd"` // null when the provider doesn't say
+		Findings   int      `json:"findings"`
+		Grounding  string   `json:"grounding"`
 	} `json:"stats"`
 	PromptAssembly assemblyJSON   `json:"prompt_assembly"`
 	ToolCalls      []toolCallJSON `json:"tool_calls"`
@@ -78,7 +79,7 @@ func (r *Runner) newTrace(j job, pull postgres.PullRequest, took time.Duration) 
 // successTrace is the trace of a finished review.
 func (r *Runner) successTrace(j job, pull postgres.PullRequest, res review.Result, took time.Duration) []byte {
 	t := r.newTrace(j, pull, took)
-	t.Stats.TokensIn, t.Stats.TokensOut = res.TokensIn, res.TokensOut
+	t.Stats.TokensIn, t.Stats.TokensOut, t.Stats.CostUSD = res.TokensIn, res.TokensOut, res.CostUSD
 	t.Stats.Findings, t.Stats.Grounding = len(res.Review.Findings), res.Grounding.Summary()
 	a := res.Assembly
 	t.PromptAssembly = assemblyJSON{
@@ -95,9 +96,10 @@ func (r *Runner) successTrace(j job, pull postgres.PullRequest, res review.Resul
 }
 
 // failureTrace is the trace of a run that failed or was cancelled: its log
-// says why.
-func (r *Runner) failureTrace(j job, pull postgres.PullRequest, took time.Duration) []byte {
+// says why, and its stats what the model calls made before took.
+func (r *Runner) failureTrace(j job, pull postgres.PullRequest, took time.Duration, spent review.Usage) []byte {
 	t := r.newTrace(j, pull, took)
+	t.Stats.TokensIn, t.Stats.TokensOut, t.Stats.CostUSD = spent.TokensIn, spent.TokensOut, spent.CostUSD
 	t.Stats.Grounding = "0/0 passed"
 	t.PromptAssembly = assemblyJSON{System: j.agent.SystemPrompt}
 	return mustJSON(t)

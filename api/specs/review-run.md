@@ -48,6 +48,17 @@ What must hold; the code is the reference for how.
 - The review, its findings and the trace are saved in one transaction, **only if the run is
   still running**, checked with its row locked. A run cancelled or deleted meanwhile keeps nothing.
 
+## Cost
+- A run's cost (`agent_runs.cost_usd`, the trace's `stats.cost_usd`) is the sum, in US dollars,
+  of what the provider billed for **every answered model call**: per-file calls and repair
+  retries included. Only OpenRouter reports it (`usage.cost`, asked for with `usage.include`);
+  for other providers it is `NULL`, shown as "—". `0` is a free model, not unknown.
+- **Failed and cancelled runs keep what they spent**: tokens and cost of the calls answered
+  before the failure. A call that errors has no answer, so its cost can't be counted.
+- `FinishRun` skips a run already marked cancelled, so its usage is saved by `RecordRunUsage`,
+  as is the usage of a run cancelled while its model answered (its review is discarded).
+- A PR's cost in the list is the sum over all its runs, `NULL` when no run's cost is known.
+
 ## Live log and cancel
 - `GET /runs/{id}/events` streams events `{runId, seq, kind, msg, t}` as SSE, earlier ones
   first. Kinds: `info`, `tool` (a call to git or a model), `result`, `error`.
@@ -59,4 +70,5 @@ What must hold; the code is the reference for how.
 
 ## Not in the starter
 The lethal-trifecta fields (`trifecta_components`, `evidence`) stay in the schema but are
-ignored. Run cost isn't tracked. Both come back in later course lessons.
+ignored; they come back in a later course lesson. Cost is only what the provider reports:
+no price table, no estimate (`../../specs/run-cost.md`).

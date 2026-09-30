@@ -96,8 +96,8 @@ func findOrInsert(ctx context.Context, find, insert func() (uuid.UUID, error)) (
 }
 
 // demo adds the demo repository acme/payments-api and its pull request
-// #482, with files, a commit and a review, so the web app has something to
-// show before the first real repository.
+// #482, with files, a commit, and a finished run with its review and trace,
+// so the web app has something to show before the first real repository.
 func demo(ctx context.Context, q *postgres.Queries, workspace, user uuid.UUID) error {
 	repo, err := findOrInsert(ctx,
 		func() (uuid.UUID, error) {
@@ -141,8 +141,12 @@ func demo(ctx context.Context, q *postgres.Queries, workspace, user uuid.UUID) e
 	}); err != nil {
 		return err
 	}
+	run, err := demoRun(ctx, q, workspace, pull)
+	if err != nil {
+		return err
+	}
 	review, err := q.InsertReview(ctx, postgres.InsertReviewParams{
-		WorkspaceID: workspace, PrID: pull, Verdict: new("request_changes"), Score: new(int32(61)), Model: new("seed"),
+		WorkspaceID: workspace, PrID: pull, RunID: &run, Verdict: new("request_changes"), Score: new(int32(61)), Model: new("seed"),
 		Summary: new("Solid middleware approach, but a Stripe secret key is committed in plaintext and the user-list endpoint introduces an N+1 query under the new limiter."),
 	})
 	if err != nil {
@@ -162,6 +166,53 @@ func demo(ctx context.Context, q *postgres.Queries, workspace, user uuid.UUID) e
 		}
 	}
 	return nil
+}
+
+// Demo run's outcome, as a finished review run records it.
+const (
+	demoCost      = 0.0021 // US dollars
+	demoTokensIn  = 5120
+	demoTokensOut = 860
+	demoMs        = 8400
+)
+
+// demoRun adds the finished run the demo review came from, with its trace.
+func demoRun(ctx context.Context, q *postgres.Queries, workspace, pull uuid.UUID) (uuid.UUID, error) {
+	run, err := q.CreateRun(ctx, postgres.CreateRunParams{
+		WorkspaceID: workspace, PrID: &pull, Provider: new(agentProvider), Model: new(agentModel),
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	err = q.FinishRun(ctx, postgres.FinishRunParams{
+		ID: run, Status: new("done"), DurationMs: new(int32(demoMs)),
+		TokensIn: new(int32(demoTokensIn)), TokensOut: new(int32(demoTokensOut)), CostUsd: new(demoCost),
+		FindingsCount: new(int32(2)), Grounding: new("2/2 passed"), Score: new(int32(61)), Blockers: new(int32(1)),
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	// The shape the runner saves (RunTrace in the client's contracts).
+	trace, err := json.Marshal(map[string]any{
+		"config": map[string]any{"agent": "General Reviewer", "version": "1", "provider": agentProvider,
+			"model": agentModel, "pr": 482, "source": "local"},
+		"stats": map[string]any{"duration_ms": demoMs, "tokens_in": demoTokensIn, "tokens_out": demoTokensOut,
+			"cost_usd": demoCost, "findings": 2, "grounding": "2/2 passed"},
+		"prompt_assembly": map[string]any{"system": "You are a senior code reviewer.",
+			"user": "Review pull request #482 \"Add rate limiting to public API endpoints\" by marisa.koch."},
+		"tool_calls":    []map[string]any{{"tool": "review_file", "args": "all files", "meta": "single-pass", "ms": demoMs}},
+		"raw_output":    "",
+		"memory_pulled": []any{},
+		"specs_read":    []any{},
+		"log": []map[string]any{
+			{"t": "00.00", "kind": "info", "msg": "Seeded demo run"},
+			{"t": "08.40", "kind": "result", "msg": "Citation grounding: 2/2 passed"},
+		},
+	})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return run, q.SaveTrace(ctx, postgres.SaveTraceParams{RunID: run, Trace: trace})
 }
 
 // agents adds the built-in reviewer agents the workspace hasn't got.

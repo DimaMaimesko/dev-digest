@@ -16,7 +16,8 @@ import (
 // requests it gets.
 type scriptedLLM struct {
 	reply func(review.JSONRequest) string
-	err   error // returned instead of an answer when set
+	err   error    // returned instead of an answer when set
+	cost  *float64 // each answer's cost; nil like a provider that doesn't say
 	reqs  []review.JSONRequest
 }
 
@@ -25,8 +26,10 @@ func (s *scriptedLLM) CompleteJSON(_ context.Context, req review.JSONRequest) (r
 	if s.err != nil {
 		return review.JSONResponse{}, s.err
 	}
-	return review.JSONResponse{Text: s.reply(req), TokensIn: 100, TokensOut: 10}, nil
+	return review.JSONResponse{Text: s.reply(req), TokensIn: 100, TokensOut: 10, CostUSD: s.cost}, nil
 }
+
+func cost(f float64) *float64 { return &f }
 
 // always returns a reply function that gives the same answer to every request.
 func always(answer string) func(review.JSONRequest) string {
@@ -109,7 +112,7 @@ func TestRunMapReduce(t *testing.T) {
 		}
 		critical := withSeverity(finding("src/config.ts", 11, 11), review.SeverityCritical)
 		return answer(t, review.VerdictRequestChanges, "Secret in code.", 20, critical)
-	}}
+	}, cost: cost(0.25)}
 
 	res, err := review.Run(context.Background(), llm, review.Input{
 		Model:     "m",
@@ -151,6 +154,9 @@ func TestRunMapReduce(t *testing.T) {
 	}
 	if res.TokensIn != 200 || strings.Count(res.Raw, "\n---\n") != 1 {
 		t.Errorf("TokensIn = %d, Raw = %q", res.TokensIn, res.Raw)
+	}
+	if res.CostUSD == nil || *res.CostUSD != 0.5 {
+		t.Errorf("CostUSD = %v, want 0.5: two calls at 0.25", res.CostUSD)
 	}
 }
 
@@ -311,6 +317,30 @@ func TestRunStops(t *testing.T) {
 		_, err := review.Run(context.Background(), &scriptedLLM{reply: always("no")}, in)
 		if !errors.Is(err, review.ErrInvalidReview) {
 			t.Errorf("err = %v, want ErrInvalidReview", err)
+		}
+	})
+
+	// A failed run still reports what its answered calls cost: they were paid for.
+	t.Run("usage spent before the failure", func(t *testing.T) {
+		llm := &scriptedLLM{reply: func(req review.JSONRequest) string {
+			if strings.Contains(userMessage(req), "src/api/users.ts") {
+				return "no" // the second file's call never gives a valid review
+			}
+			return answer(t, review.VerdictApprove, "ok", 95)
+		}, cost: cost(0.5)}
+		mapReduce := in
+		mapReduce.Strategy = review.StrategyMapReduce
+
+		res, err := review.Run(context.Background(), llm, mapReduce)
+		if !errors.Is(err, review.ErrInvalidReview) {
+			t.Fatalf("err = %v, want ErrInvalidReview", err)
+		}
+		// 1 call for the first file, 3 (1 + 2 retries) for the second.
+		if res.TokensIn != 400 || res.TokensOut != 40 || res.CostUSD == nil || *res.CostUSD != 2 {
+			t.Errorf("Usage = %d/%d tokens, cost %v; want 400/40 and 2", res.TokensIn, res.TokensOut, res.CostUSD)
+		}
+		if res.Review.Findings != nil || res.Chunks != nil {
+			t.Error("a failed Result should hold only the Usage")
 		}
 	})
 }

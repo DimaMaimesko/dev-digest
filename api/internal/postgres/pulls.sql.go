@@ -128,7 +128,9 @@ const listPulls = `-- name: ListPulls :many
 SELECT p.id, p.number, p.title, p.author, p.branch, p.base, p.head_sha,
        p.last_reviewed_sha, p.additions, p.deletions, p.files_count, p.status,
        p.opened_at, p.updated_at,
-       latest.score AS latest_score
+       latest.score AS latest_score,
+       COALESCE(spent.cost_usd, 0)::double precision AS cost_usd,
+       COALESCE(spent.priced_runs, 0)::integer AS priced_runs
 FROM pull_requests p
 LEFT JOIN LATERAL (
     SELECT r.score
@@ -137,6 +139,11 @@ LEFT JOIN LATERAL (
     ORDER BY r.created_at DESC
     LIMIT 1
 ) latest ON true
+LEFT JOIN (
+    SELECT ar.pr_id, sum(ar.cost_usd) AS cost_usd, count(ar.cost_usd) AS priced_runs
+    FROM agent_runs ar
+    GROUP BY ar.pr_id
+) spent ON spent.pr_id = p.id
 WHERE p.repo_id = $1
 ORDER BY p.number DESC
 `
@@ -157,10 +164,14 @@ type ListPullsRow struct {
 	OpenedAt        *time.Time
 	UpdatedAt       *time.Time
 	LatestScore     *int32
+	CostUsd         float64
+	PricedRuns      int32
 }
 
 // A repository's pull requests, each with the score of its latest review
-// (NULL when never reviewed), newest first. The web app sorts the list itself.
+// (NULL when never reviewed) and what all its runs cost, newest first. The web
+// app sorts the list itself. The cost is known only when priced_runs > 0:
+// sqlc makes any computed column non-null, so NULL can't say "unknown" here.
 func (q *Queries) ListPulls(ctx context.Context, repoID uuid.UUID) ([]ListPullsRow, error) {
 	rows, err := q.db.Query(ctx, listPulls, repoID)
 	if err != nil {
@@ -186,6 +197,8 @@ func (q *Queries) ListPulls(ctx context.Context, repoID uuid.UUID) ([]ListPullsR
 			&i.OpenedAt,
 			&i.UpdatedAt,
 			&i.LatestScore,
+			&i.CostUsd,
+			&i.PricedRuns,
 		); err != nil {
 			return nil, err
 		}

@@ -27,6 +27,8 @@ must hold. The details of each step are in `api/specs/`.
   at once with one run per agent; the runs execute one after another in the background.
 - The run's live log streams to the page while it runs, and the user can cancel it.
 - A finished run produces a review: findings with a severity, and a 0–100 score.
+- Each run records what it cost when the provider reports it (OpenRouter); failed and cancelled
+  runs too. The PR list, the run timeline and the trace show it. → `run-cost.md`
 - **Every finding points at lines the diff shows.** Findings citing other lines are dropped
   (the grounding gate) and listed as dropped in the run trace.
 - With repo-intel on, the prompt includes the repository map and the callers of the changed
@@ -39,4 +41,4 @@ must hold. The details of each step are in `api/specs/`.
 ## Invariants
 - Everything runs locally. The only outbound calls go to GitHub and the chosen LLM provider.
 - No step needs an LLM key except running a review. The seeded demo data (`acme/payments-api`,
-  PR #482, a finished review) works without any key; the e2e flows rely on this.
+  PR #482, a finished run with its review and trace) works without any key; the e2e flows rely on this.

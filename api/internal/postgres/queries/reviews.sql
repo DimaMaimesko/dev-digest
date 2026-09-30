@@ -22,7 +22,7 @@ ORDER BY f.file, f.start_line, f.end_line, f.id;
 -- name: ListRuns :many
 -- A pull request's review runs of any status, newest first.
 SELECT r.id, r.agent_id, a.name AS agent_name, r.provider, r.model, r.status,
-       r.error, r.duration_ms, r.tokens_in, r.tokens_out, r.findings_count,
+       r.error, r.duration_ms, r.tokens_in, r.tokens_out, r.cost_usd, r.findings_count,
        r.grounding, r.ran_at, r.score, r.blockers
 FROM agent_runs r
 LEFT JOIN agents a ON a.id = r.agent_id

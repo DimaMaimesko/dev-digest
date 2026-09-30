@@ -45,4 +45,5 @@ type JSONResponse struct {
 	Text      string // the JSON as the model wrote it; not yet checked against the schema
 	TokensIn  int
 	TokensOut int
+	CostUSD   *float64 // what the call cost in US dollars, or nil when the provider doesn't say
 }

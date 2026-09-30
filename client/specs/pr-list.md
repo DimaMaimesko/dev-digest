@@ -1,8 +1,10 @@
 # Spec — PR list (`/repos/:repoId/pulls`)
 
 ## Must
-- Shows the repository's pull requests with number, title, author, size, score, status and
+- Shows the repository's pull requests with number, title, author, size, score, cost, status and
   last update. The header summarises "N open · M need review".
+- **Cost** is what all the PR's runs cost (`cost_usd`), formatted by `lib/format-cost.ts`:
+  "—" when unknown, "$0.0042" under a cent, else "$0.12"; the exact value on hover.
 - **Status filter** chips: all · needs review · reviewed · stale. The default is
   `needs_review`. The choice is kept in `?status=`, set explicitly even for "all".
 - **Search** matches the title (case-insensitive) or the PR number. It is not kept in the URL.

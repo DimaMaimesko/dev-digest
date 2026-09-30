@@ -18,9 +18,16 @@ SELECT id FROM agent_runs WHERE id = $1 AND status = 'running' FOR UPDATE;
 -- run stays cancelled.
 UPDATE agent_runs
 SET status = @status, duration_ms = @duration_ms, tokens_in = @tokens_in, tokens_out = @tokens_out,
-    findings_count = @findings_count, grounding = @grounding, score = @score,
+    cost_usd = @cost_usd, findings_count = @findings_count, grounding = @grounding, score = @score,
     blockers = @blockers, error = @error
 WHERE id = @id AND status = 'running';
+
+-- name: RecordRunUsage :exec
+-- Records what a run's model calls took, whatever its status: a run cancelled
+-- while its model answered was still billed, and FinishRun skips it.
+UPDATE agent_runs
+SET tokens_in = @tokens_in, tokens_out = @tokens_out, cost_usd = @cost_usd
+WHERE id = @id;
 
 -- name: InsertReview :one
 INSERT INTO reviews (workspace_id, pr_id, agent_id, run_id, kind, verdict, summary, score, model)

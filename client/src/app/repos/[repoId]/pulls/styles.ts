@@ -40,6 +40,11 @@ export const s = {
   } satisfies CSSProperties,
   sizeBadgeBorder: (color: string): CSSProperties => ({ border: `1px solid ${color}` }),
   scoreCell: { display: "flex", alignItems: "center" } satisfies CSSProperties,
+  costCell: (known: boolean): CSSProperties => ({
+    fontSize: 12.5,
+    fontVariantNumeric: "tabular-nums",
+    color: known ? "var(--text-secondary)" : "var(--text-muted)",
+  }),
   updatedCell: {
     fontSize: 12,
     color: "var(--text-muted)",

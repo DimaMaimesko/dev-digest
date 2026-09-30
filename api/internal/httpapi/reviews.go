@@ -180,21 +180,22 @@ func (s *Server) decideFinding(w http.ResponseWriter, r *http.Request, decision 
 // runJSON is one review run: an agent reviewing a pull request once, whatever
 // the outcome (RunSummary in server/src/vendor/shared/contracts/trace.ts).
 type runJSON struct {
-	RunID         string  `json:"run_id"`
-	AgentID       *string `json:"agent_id"`
-	AgentName     *string `json:"agent_name"`
-	Provider      *string `json:"provider"`
-	Model         *string `json:"model"`
-	Status        *string `json:"status"` // running, done, failed or cancelled
-	Error         *string `json:"error"`
-	DurationMs    *int32  `json:"duration_ms"`
-	TokensIn      *int32  `json:"tokens_in"`
-	TokensOut     *int32  `json:"tokens_out"`
-	FindingsCount *int32  `json:"findings_count"`
-	Grounding     *string `json:"grounding"`
-	RanAt         string  `json:"ran_at"`
-	Score         *int32  `json:"score"`
-	Blockers      *int32  `json:"blockers"`
+	RunID         string   `json:"run_id"`
+	AgentID       *string  `json:"agent_id"`
+	AgentName     *string  `json:"agent_name"`
+	Provider      *string  `json:"provider"`
+	Model         *string  `json:"model"`
+	Status        *string  `json:"status"` // running, done, failed or cancelled
+	Error         *string  `json:"error"`
+	DurationMs    *int32   `json:"duration_ms"`
+	TokensIn      *int32   `json:"tokens_in"`
+	TokensOut     *int32   `json:"tokens_out"`
+	CostUSD       *float64 `json:"cost_usd"` // null when the provider doesn't say
+	FindingsCount *int32   `json:"findings_count"`
+	Grounding     *string  `json:"grounding"`
+	RanAt         string   `json:"ran_at"`
+	Score         *int32   `json:"score"`
+	Blockers      *int32   `json:"blockers"`
 }
 
 // listRuns answers GET /pulls/{id}/runs: the run history, newest first,
@@ -222,6 +223,7 @@ func (s *Server) listRuns(w http.ResponseWriter, r *http.Request) {
 			DurationMs:    run.DurationMs,
 			TokensIn:      run.TokensIn,
 			TokensOut:     run.TokensOut,
+			CostUSD:       run.CostUsd,
 			FindingsCount: run.FindingsCount,
 			Grounding:     run.Grounding,
 			RanAt:         jsTime(run.RanAt),

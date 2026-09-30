@@ -62,9 +62,8 @@ type Result struct {
 	Strategy  Strategy // how the diff was split: StrategySinglePass or StrategyMapReduce
 	Assembly  Assembly // the prompt for the whole diff, for the run trace
 	Chunks    []string // what each model call reviewed: "all files" or a file's path
-	TokensIn  int
-	TokensOut int
-	Raw       string // the model's accepted answers, separated by "\n---\n"
+	Usage              // of every model call, retries included
+	Raw       string   // the model's accepted answers, separated by "\n---\n"
 }
 
 // Run reviews a diff with one model.
@@ -75,6 +74,9 @@ type Result struct {
 // is reviewed on its own, a call's findings about any other file are dropped
 // too: the model never saw that file. Before each model call, Run stops with
 // ctx's error if ctx is done.
+//
+// When Run fails, the Result it returns holds only the Usage of the calls
+// answered so far, which were paid for all the same.
 func Run(ctx context.Context, llm LLM, in Input) (Result, error) {
 	emit := func(kind EventKind, format string, args ...any) {
 		if in.OnEvent != nil {
@@ -108,7 +110,7 @@ func Run(ctx context.Context, llm LLM, in Input) (Result, error) {
 	)
 	for _, c := range chunks {
 		if err := ctx.Err(); err != nil {
-			return Result{}, err
+			return Result{Usage: res.Usage}, err
 		}
 		if res.Strategy == StrategyMapReduce {
 			emit(EventTool, "map: reviewing %s", c.label)
@@ -116,8 +118,9 @@ func Run(ctx context.Context, llm LLM, in Input) (Result, error) {
 			emit(EventTool, "Reviewing %s in one pass", c.label)
 		}
 		ans, err := m.askForReview(ctx, in.Prompt.Assemble(c.diff))
+		res.Usage = res.Usage.Plus(ans.Usage)
 		if err != nil {
-			return Result{}, fmt.Errorf("review %s: %w", c.label, err)
+			return Result{Usage: res.Usage}, fmt.Errorf("review %s: %w", c.label, err)
 		}
 		emit(EventResult, "%s: %d candidate finding(s)", c.label, len(ans.Review.Findings))
 
@@ -138,8 +141,6 @@ func Run(ctx context.Context, llm LLM, in Input) (Result, error) {
 		parts = append(parts, ans.Review)
 		raws = append(raws, ans.Raw)
 		res.Chunks = append(res.Chunks, c.label)
-		res.TokensIn += ans.TokensIn
-		res.TokensOut += ans.TokensOut
 	}
 
 	res.Review = merge(parts)

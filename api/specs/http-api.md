@@ -40,7 +40,7 @@ status codes, side effects and the rules a change must keep.
 | `POST /repos/{id}/resync` | 202 with the job. Moves the clone to the default branch's latest commit, then indexes |
 | `DELETE /repos/{id}` | Removes the repo with its PRs and reviews. The clone stays on disk |
 | `GET /repos/{id}/index-state` | The index state (the **Indexed** badge, not rendered by the starter UI yet). Unknown repo → the "no data" state, not 404 |
-| `GET /repos/{id}/pulls` | With a GitHub token, syncs the 50 most recently updated PRs first; without one, or when GitHub fails, serves the saved ones |
+| `GET /repos/{id}/pulls` | With a GitHub token, syncs the 50 most recently updated PRs first; without one, or when GitHub fails, serves the saved ones. Each has `score` (latest review) and `cost_usd` (all its runs; null when none is known) |
 | `POST /repos/{id}/poll` | Like the list sync, but fails: 502 `github_error`, 500 `config_error` without a token. The web app doesn't call it |
 
 ### Pull requests
@@ -55,9 +55,9 @@ status codes, side effects and the rules a change must keep.
 |---|---|
 | `POST /pulls/{id}/review` | Body `{"agentId": "…"}` or `{"all": true}` (enabled agents); neither is 400 `invalid_run_request`. Answers at once with one run per agent → `review-run.md` |
 | `GET /pulls/{id}/reviews` | |
-| `GET /pulls/{id}/runs`, `GET /pulls/{id}/runs/active` | |
+| `GET /pulls/{id}/runs`, `GET /pulls/{id}/runs/active` | A run has `cost_usd`, null when the provider doesn't report it |
 | `GET /runs/{id}/events` | Server-sent events, the live log. An unknown run ends the stream at once |
-| `GET /runs/{id}/trace` | |
+| `GET /runs/{id}/trace` | `stats.cost_usd`: null when unknown, absent in traces saved before cost was tracked |
 | `POST /runs/{id}/cancel` | Always `{"ok": true}`, even for an unknown run (kept from TS) |
 | `DELETE /runs/{id}` | The run, its trace and its review. Unknown run → 200 `{"ok": false}` (kept from TS) |
 | `DELETE /reviews/{id}` | The review and its findings; the run stays. Unknown → 404 |

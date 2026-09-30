@@ -11,9 +11,9 @@ the flow fails, even though the e2e folder didn't change.
 | Flow | Seed (`api/internal/seed/seed.go`) | Client copy | Route / URL state |
 |---|---|---|---|
 | 01 app boot | at least one repo | "Pull Requests" (`messages/en/prReview.json` `list.title`) | `/` redirects to `/repos/:id/pulls` |
-| 02 PR detail | `acme/payments-api` is the **first** repo; PR #482 "Add rate limiting to public API endpoints" | — | `/pulls/482` |
+| 02 PR detail | `acme/payments-api` is the **first** repo; PR #482 "Add rate limiting to public API endpoints"; its seeded run's cost `$0.0021` (`demoCost`) | the cost as `formatCost` writes it (`client/src/lib/format-cost.ts`) | `/pulls/482` |
 | 03 agents | agent "Security Reviewer" | — | `/agents` |
-| 04 findings | PR #482's review: verdict `request_changes`, 2 findings, one "Hardcoded Stripe secret key in commit" | tab button "Agent runs" (hardcoded in `PrDetailHeader.tsx`); the verdict shown as `verdict.replace("_", " ")` and "N findings", both in `ReviewRunAccordion.tsx` | `?tab=findings`; the newest run's accordion open by default |
+| 04 findings | PR #482's review: verdict `request_changes`, 2 findings, one "Hardcoded Stripe secret key in commit"; the seeded run it came from, cost `$0.0021`, with a trace | tab button "Agent runs" (hardcoded in `PrDetailHeader.tsx`); the verdict shown as `verdict.replace("_", " ")` and "N findings", both in `ReviewRunAccordion.tsx`; the trace button's label "Open run trace & logs" and the "COST" stat (`messages/en/prReview.json`, `runs.json`) | `?tab=findings`; the newest run's accordion open by default; `?trace=` |
 | 05 diff | PR #482's file `src/config.ts` | tab button "Files changed" (`PrDetailHeader.tsx`) | `?tab=diff` |
 | 06 onboarding | — | "Add a repository", "Repository URL" (hardcoded in `AddRepoView.tsx`) | `/onboarding` |
 | 07 settings | — | "API Keys", "Feature Models" (`messages/en/settings.json`) | `/settings/api-keys`, `/settings/models` |

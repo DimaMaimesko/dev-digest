@@ -115,9 +115,9 @@ func (q *Queries) FailStaleRuns(ctx context.Context) (int64, error) {
 const finishRun = `-- name: FinishRun :exec
 UPDATE agent_runs
 SET status = $1, duration_ms = $2, tokens_in = $3, tokens_out = $4,
-    findings_count = $5, grounding = $6, score = $7,
-    blockers = $8, error = $9
-WHERE id = $10 AND status = 'running'
+    cost_usd = $5, findings_count = $6, grounding = $7, score = $8,
+    blockers = $9, error = $10
+WHERE id = $11 AND status = 'running'
 `
 
 type FinishRunParams struct {
@@ -125,6 +125,7 @@ type FinishRunParams struct {
 	DurationMs    *int32
 	TokensIn      *int32
 	TokensOut     *int32
+	CostUsd       *float64
 	FindingsCount *int32
 	Grounding     *string
 	Score         *int32
@@ -141,6 +142,7 @@ func (q *Queries) FinishRun(ctx context.Context, arg FinishRunParams) error {
 		arg.DurationMs,
 		arg.TokensIn,
 		arg.TokensOut,
+		arg.CostUsd,
 		arg.FindingsCount,
 		arg.Grounding,
 		arg.Score,
@@ -247,6 +249,31 @@ type MarkReviewedParams struct {
 // commits came since.
 func (q *Queries) MarkReviewed(ctx context.Context, arg MarkReviewedParams) error {
 	_, err := q.db.Exec(ctx, markReviewed, arg.ID, arg.LastReviewedSha)
+	return err
+}
+
+const recordRunUsage = `-- name: RecordRunUsage :exec
+UPDATE agent_runs
+SET tokens_in = $1, tokens_out = $2, cost_usd = $3
+WHERE id = $4
+`
+
+type RecordRunUsageParams struct {
+	TokensIn  *int32
+	TokensOut *int32
+	CostUsd   *float64
+	ID        uuid.UUID
+}
+
+// Records what a run's model calls took, whatever its status: a run cancelled
+// while its model answered was still billed, and FinishRun skips it.
+func (q *Queries) RecordRunUsage(ctx context.Context, arg RecordRunUsageParams) error {
+	_, err := q.db.Exec(ctx, recordRunUsage,
+		arg.TokensIn,
+		arg.TokensOut,
+		arg.CostUsd,
+		arg.ID,
+	)
 	return err
 }
 

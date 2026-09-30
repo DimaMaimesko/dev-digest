@@ -169,8 +169,12 @@ func readDiff(file string, stdin io.Reader) (diff.Diff, error) {
 // printText prints a review for people to read.
 func printText(w io.Writer, res review.Result) {
 	r := res.Review
-	fmt.Fprintf(w, "\n%s · score %d · grounding %s · %d → %d tokens\n",
+	fmt.Fprintf(w, "\n%s · score %d · grounding %s · %d → %d tokens",
 		r.Verdict, r.Score, res.Grounding.Summary(), res.TokensIn, res.TokensOut)
+	if res.CostUSD != nil {
+		fmt.Fprintf(w, " · $%.4f", *res.CostUSD)
+	}
+	fmt.Fprintln(w)
 	if r.Summary != "" {
 		fmt.Fprintf(w, "\n%s\n", r.Summary)
 	}
@@ -214,6 +218,7 @@ func printJSON(w io.Writer, res review.Result) error {
 		Strategy  review.Strategy `json:"strategy"`
 		TokensIn  int             `json:"tokens_in"`
 		TokensOut int             `json:"tokens_out"`
+		CostUSD   *float64        `json:"cost_usd"` // null when the provider doesn't say
 	}{
 		Review:    res.Review,
 		Grounding: res.Grounding.Summary(),
@@ -221,6 +226,7 @@ func printJSON(w io.Writer, res review.Result) error {
 		Strategy:  res.Strategy,
 		TokensIn:  res.TokensIn,
 		TokensOut: res.TokensOut,
+		CostUSD:   res.CostUSD,
 	}
 	for _, d := range res.Grounding.Dropped {
 		out.Dropped = append(out.Dropped, dropped{d.Finding, d.Reason})

@@ -97,7 +97,7 @@ func server(t *testing.T, answers ...string) (*httptest.Server, *recorder) {
 // testClient returns a client for srv that doesn't wait long between retries.
 func testClient(srv *httptest.Server, openRouter bool) *Client {
 	c := NewCompatible(srv.URL+"/v1/", "sk-test")
-	c.sendSessionID = openRouter
+	c.openRouter = openRouter
 	c.retryDelay = time.Millisecond
 	return c
 }
@@ -138,7 +138,7 @@ func TestCompleteJSONOptions(t *testing.T) {
 		model       string
 		openRouter  bool
 		temperature bool // whether the body has a temperature
-		sessionID   bool // whether the body has session_id
+		sessionID   bool // whether the body has session_id and asks for the cost
 	}{
 		{"OpenAI chat model", "gpt-4.1", false, true, false},
 		{"OpenAI reasoning model", "o3-mini", false, false, false},
@@ -160,8 +160,49 @@ func TestCompleteJSONOptions(t *testing.T) {
 			if _, ok := body["session_id"]; ok != tt.sessionID {
 				t.Errorf("session_id sent = %v, want %v", ok, tt.sessionID)
 			}
+			usage, ok := body["usage"]
+			if ok != tt.sessionID {
+				t.Errorf("usage sent = %v, want %v", ok, tt.sessionID)
+			}
+			if ok && !reflect.DeepEqual(usage, map[string]any{"include": true}) {
+				t.Errorf("usage = %v, want {include: true}", usage)
+			}
 		})
 	}
+}
+
+func TestCompleteJSONCost(t *testing.T) {
+	tests := []struct {
+		name  string
+		usage string
+		want  *float64
+	}{
+		{"cost reported", `{"prompt_tokens":1200,"completion_tokens":80,"cost":0.00042}`, ptr(0.00042)},
+		{"free model", `{"prompt_tokens":1200,"completion_tokens":80,"cost":0}`, ptr(0.0)},
+		{"no cost", `{"prompt_tokens":1200,"completion_tokens":80}`, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, _ := server(t, `200 {"choices":[{"message":{"content":"{}"}}],"usage":`+tt.usage+`}`)
+			res, err := testClient(srv, true).CompleteJSON(context.Background(), request)
+			if err != nil {
+				t.Fatalf("CompleteJSON: %v", err)
+			}
+			if !reflect.DeepEqual(res.CostUSD, tt.want) {
+				t.Errorf("CostUSD = %v, want %v", deref(res.CostUSD), deref(tt.want))
+			}
+		})
+	}
+}
+
+func ptr(f float64) *float64 { return &f }
+
+// deref shows a cost in a test message: its value, or nil.
+func deref(f *float64) any {
+	if f == nil {
+		return nil
+	}
+	return *f
 }
 
 func TestCompleteJSONErrors(t *testing.T) {

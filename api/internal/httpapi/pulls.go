@@ -36,10 +36,12 @@ type pullJSON struct {
 }
 
 // pullListItemJSON is a pull request in the list, with its latest review's
-// score. Embedding pullJSON puts its fields at the same level in the JSON.
+// score and what all its runs cost. Embedding pullJSON puts its fields at the
+// same level in the JSON.
 type pullListItemJSON struct {
 	pullJSON
-	Score *int32 `json:"score"`
+	Score   *int32   `json:"score"`
+	CostUSD *float64 `json:"cost_usd"` // null when no run's cost is known
 }
 
 // pullDetailJSON is one pull request with its description, files and commits
@@ -116,10 +118,19 @@ func (s *Server) listPulls(w http.ResponseWriter, r *http.Request) {
 				OpenedAt:   jsTimePtr(p.OpenedAt),
 				UpdatedAt:  jsTimePtr(p.UpdatedAt),
 			},
-			Score: p.LatestScore,
+			Score:   p.LatestScore,
+			CostUSD: knownCost(p.CostUsd, p.PricedRuns),
 		})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// knownCost is cost, or nil when none of the runs it sums had a known cost.
+func knownCost(cost float64, pricedRuns int32) *float64 {
+	if pricedRuns == 0 {
+		return nil
+	}
+	return &cost
 }
 
 // getPull answers GET /pulls/{id}: one pull request with its description,

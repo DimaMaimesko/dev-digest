@@ -146,7 +146,7 @@ func (r *Runner) execute(pull postgres.PullRequest, repo postgres.Repo, jobs []j
 		msg := "Failed to load PR diff: " + err.Error()
 		shared.error(msg)
 		for _, j := range jobs {
-			r.finishFailed(j, pull, "failed", msg, 0)
+			r.finishFailed(j, pull, "failed", msg, 0, review.Usage{})
 		}
 		return
 	}
@@ -155,33 +155,34 @@ func (r *Runner) execute(pull postgres.PullRequest, repo postgres.Repo, jobs []j
 	for _, j := range jobs {
 		start := time.Now()
 		r.log.Info("review started", "run", j.run, "agent", j.agent.Name, "provider", j.agent.Provider, "model", j.agent.Model)
-		err := r.runOne(j, pull, repo, d, start)
+		spent, err := r.runOne(j, pull, repo, d, start)
 		switch {
 		case err == nil:
 			r.log.Info("review done", "run", j.run, "agent", j.agent.Name, "duration", time.Since(start))
 		case r.bus.cancelledByUser(j.run):
 			r.newLog(j.run).error("Run cancelled by user")
-			r.finishFailed(j, pull, "cancelled", "Cancelled by user", time.Since(start))
+			r.finishFailed(j, pull, "cancelled", "Cancelled by user", time.Since(start), spent)
 			r.log.Info("review cancelled", "run", j.run, "agent", j.agent.Name)
 		default:
 			if r.ctx.Err() != nil {
 				err = errors.New("the server stopped during the run")
 			}
 			r.newLog(j.run).error("Run failed: " + err.Error())
-			r.finishFailed(j, pull, "failed", err.Error(), time.Since(start))
+			r.finishFailed(j, pull, "failed", err.Error(), time.Since(start), spent)
 			r.log.Error("review failed", "run", j.run, "agent", j.agent.Name, "err", err)
 		}
 	}
 }
 
-// runOne reviews the diff with one agent and saves the outcome.
-func (r *Runner) runOne(j job, pull postgres.PullRequest, repo postgres.Repo, d diff.Diff, start time.Time) error {
+// runOne reviews the diff with one agent and saves the outcome. It returns
+// what the model calls took, even when it fails.
+func (r *Runner) runOne(j job, pull postgres.PullRequest, repo postgres.Repo, d diff.Diff, start time.Time) (review.Usage, error) {
 	ctx := j.ctx
 	a := j.agent
 	log := r.newLog(j.run)
 	log.info(fmt.Sprintf(`Starting review with agent "%s" (%s/%s)`, a.Name, a.Provider, a.Model))
 	if err := ctx.Err(); err != nil {
-		return err // cancelled before its turn
+		return review.Usage{}, err // cancelled before its turn
 	}
 
 	var llm review.LLM
@@ -190,7 +191,7 @@ func (r *Runner) runOne(j job, pull postgres.PullRequest, repo postgres.Repo, d 
 		return err
 	})
 	if err != nil {
-		return err
+		return review.Usage{}, err
 	}
 
 	prompt := review.Prompt{System: a.SystemPrompt, Task: taskLine(pull)}
@@ -222,9 +223,9 @@ func (r *Runner) runOne(j job, pull postgres.PullRequest, repo postgres.Repo, d 
 		OnEvent:   func(e review.Event) { log.event(string(e.Kind), e.Message) },
 	})
 	if err != nil {
-		return err
+		return res.Usage, err
 	}
-	return r.save(j, pull, res, log, time.Since(start))
+	return res.Usage, r.save(j, pull, res, log, time.Since(start))
 }
 
 // save stores a finished review: the review and its findings, the run's
@@ -239,7 +240,8 @@ func (r *Runner) save(j job, pull postgres.PullRequest, res review.Result, log *
 		q := postgres.New(tx)
 		if _, err := q.LockRunningRun(ctx, j.run); errors.Is(err, pgx.ErrNoRows) {
 			log.info("Run was cancelled before its review was saved; discarding it")
-			return nil
+			// The answer was paid for all the same.
+			return q.RecordRunUsage(ctx, usageParams(j.run, res.Usage))
 		} else if err != nil {
 			return err
 		}
@@ -266,7 +268,7 @@ func (r *Runner) save(j job, pull postgres.PullRequest, res review.Result, log *
 		count, grounding, blockers := int32(len(findings)), res.Grounding.Summary(), int32(countBlockers(findings, a.CiFailOn))
 		status := "done"
 		err = q.FinishRun(ctx, postgres.FinishRunParams{
-			ID: j.run, Status: &status, DurationMs: &ms, TokensIn: &tokensIn, TokensOut: &tokensOut,
+			ID: j.run, Status: &status, DurationMs: &ms, TokensIn: &tokensIn, TokensOut: &tokensOut, CostUsd: res.CostUSD,
 			FindingsCount: &count, Grounding: &grounding, Score: &score, Blockers: &blockers,
 		})
 		if err != nil {
@@ -274,7 +276,7 @@ func (r *Runner) save(j job, pull postgres.PullRequest, res review.Result, log *
 		}
 		// The trace's log ends here: the last line below is only live.
 		trace := r.successTrace(j, pull, res, took)
-		log.info("Run complete; trace persisted")
+		log.info("Run complete" + costNote(res.Usage) + "; trace persisted")
 		return q.SaveTrace(ctx, postgres.SaveTraceParams{RunID: j.run, Trace: trace})
 	})
 	if err != nil {
@@ -284,23 +286,42 @@ func (r *Runner) save(j job, pull postgres.PullRequest, res review.Result, log *
 	return nil
 }
 
-// finishFailed records a run that failed or was cancelled, with its log so
-// far, and ends its live log.
-func (r *Runner) finishFailed(j job, pull postgres.PullRequest, status, msg string, took time.Duration) {
+// finishFailed records a run that failed or was cancelled, with what its
+// model calls took and its log so far, and ends its live log.
+func (r *Runner) finishFailed(j job, pull postgres.PullRequest, status, msg string, took time.Duration, spent review.Usage) {
 	// Saved even while the runner closes.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.ctx), 30*time.Second)
 	defer cancel()
 	ms, zero, grounding := int32(took.Milliseconds()), int32(0), "0/0 passed"
+	tokensIn, tokensOut := int32(spent.TokensIn), int32(spent.TokensOut)
 	err := r.q.FinishRun(ctx, postgres.FinishRunParams{
-		ID: j.run, Status: &status, DurationMs: &ms, TokensIn: &zero, TokensOut: &zero,
+		ID: j.run, Status: &status, DurationMs: &ms, TokensIn: &tokensIn, TokensOut: &tokensOut, CostUsd: spent.CostUSD,
 		FindingsCount: &zero, Grounding: &grounding, Error: &msg,
 	})
 	if err != nil {
 		r.log.Error("run outcome not saved", "run", j.run, "err", err)
 	}
+	// FinishRun skips a run the user already marked cancelled; what its calls
+	// took counts all the same.
+	if err := r.q.RecordRunUsage(ctx, usageParams(j.run, spent)); err != nil {
+		r.log.Error("run usage not saved", "run", j.run, "err", err)
+	}
 	// A deleted run has no trace to save; that error is expected.
-	_ = r.q.SaveTrace(ctx, postgres.SaveTraceParams{RunID: j.run, Trace: r.failureTrace(j, pull, took)})
+	_ = r.q.SaveTrace(ctx, postgres.SaveTraceParams{RunID: j.run, Trace: r.failureTrace(j, pull, took, spent)})
 	r.bus.complete(j.run)
+}
+
+func usageParams(run uuid.UUID, u review.Usage) postgres.RecordRunUsageParams {
+	in, out := int32(u.TokensIn), int32(u.TokensOut)
+	return postgres.RecordRunUsageParams{ID: run, TokensIn: &in, TokensOut: &out, CostUsd: u.CostUSD}
+}
+
+// costNote says what the calls cost, for the log, when the provider said.
+func costNote(u review.Usage) string {
+	if u.CostUSD == nil {
+		return ""
+	}
+	return fmt.Sprintf(" — $%.4f", *u.CostUSD)
 }
 
 // Cancel stops a run of the workspace: its work at once if it runs here,

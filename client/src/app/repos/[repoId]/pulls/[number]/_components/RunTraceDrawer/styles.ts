@@ -82,6 +82,7 @@ export const s = {
   // ---- Stat ----
   stat: {
     flex: 1,
+    minWidth: 0,
     padding: "10px 12px",
     borderRadius: 7,
     background: "var(--bg-surface)",
