@@ -5,23 +5,24 @@ minimal-but-working tool that does exactly one thing end to end — **import a P
 and run an agent review on it**. Every later course lesson adds one feature back
 (see [_What you build in the course_](#what-you-build-in-the-course)).
 
-Several standalone packages (no monorepo workspace — each has its own
-`package.json` and lockfile; cross-package code is shared through tsconfig path
-aliases, not published modules):
+Three standalone parts, each with its own toolchain (no monorepo workspace):
 
-| Folder           | Package                     | What it is                                            | Port |
-|------------------|-----------------------------|-------------------------------------------------------|------|
-| `server/`        | `@devdigest/api`            | Fastify API + Drizzle/Postgres (pgvector); being replaced by `api/` | 3001 with `--ts-api` |
-| `client/`        | `@devdigest/web`            | Next.js 15 web app (the studio)                       | 3000 |
-| `reviewer-core/` | `@devdigest/reviewer-core`  | Pure review engine: diff → prompt → LLM → findings    | —    |
-| `e2e/`           | `@devdigest/e2e`            | Deterministic browser e2e (agent-browser)             | —    |
-| `server/src/vendor/shared` | `@devdigest/shared` | Zod contracts shared across every package             | —    |
-| `api/`           | Go module                   | Go rewrite of `server/` + `reviewer-core/`: the API `dev.sh` runs ([status](api/README.md)) | 3001 |
+| Folder    | Package          | What it is                                            | Port |
+|-----------|------------------|-------------------------------------------------------|------|
+| `api/`    | Go module        | The API: Postgres (pgvector), repo-intel, the review engine ([README](api/README.md)) | 3001 |
+| `client/` | `@devdigest/web` | Next.js 15 web app (the studio)                       | 3000 |
+| `e2e/`    | `@devdigest/e2e` | Deterministic browser e2e (agent-browser)             | —    |
 
-`repo-intel` (the codebase indexer that powers the **Indexed** badge and feeds
-project context into reviews) lives inside the server at
-[`server/src/modules/repo-intel`](server/src/modules/repo-intel). Only
-**Postgres** runs in Docker; the API and web app run on the host via `pnpm dev`.
+The API's JSON contracts, as Zod schemas, live in the client at
+`client/src/vendor/shared` (`@devdigest/shared`). `repo-intel` (the codebase
+indexer that powers the **Indexed** badge and feeds project context into
+reviews) is [`api/internal/repointel`](api/internal/repointel); the review
+engine is [`api/internal/review`](api/internal/review). Only **Postgres** runs
+in Docker; the API and web app run on the host.
+
+The backend used to be TypeScript (`server/`, Fastify, and `reviewer-core/`).
+It was removed after the Go rewrite; the last commit that has it is
+`e9e4574` (tag `ts-final`).
 
 ## Architecture
 
@@ -29,7 +30,7 @@ project context into reviews) lives inside the server at
 flowchart LR
   subgraph Studio["Local studio (your machine)"]
     WEB["client/<br/>Next.js · :3000"]
-    API["server/<br/>Fastify · :3001"]
+    API["api/<br/>Go · :3001"]
     PG[("Postgres<br/>pgvector")]
     WEB -->|"REST /repos /pulls /agents /runs …"| API
     API --> PG
@@ -39,36 +40,31 @@ flowchart LR
   API --> CLONE
   INDEX -->|"repo map = review context"| ENGINE
 
-  ENGINE["reviewer-core/<br/>diff + repo map → prompt → LLM<br/>→ structured findings → grounding gate"]
+  ENGINE["api/internal/review<br/>diff + repo map → prompt → LLM<br/>→ structured findings → grounding gate"]
   LLM["LLM<br/>OpenAI · Anthropic · OpenRouter"]
   API -->|"run review"| ENGINE
   ENGINE --> LLM
 
-  SHARED["@devdigest/shared<br/>Zod contracts"]
-  SHARED -.->|"one schema, every package"| WEB
-  SHARED -.-> API
-  SHARED -.-> ENGINE
 ```
 
-The review flow end to end: **add a repo** → server clones it and `repo-intel`
+The review flow end to end: **add a repo** → the API clones it and `repo-intel`
 indexes it (the **Indexed** badge) → **import PRs** from GitHub → open a PR and
-**Review** → `reviewer-core` assembles a prompt from the diff + the repo map,
+**Review** → the review engine assembles a prompt from the diff + the repo map,
 calls the LLM, validates every finding against the diff (the **grounding gate**
 drops hallucinated line references), and persists structured findings with a
 severity and score. All local; the only outbound calls are to GitHub (PR data)
 and the LLM (via OpenRouter).
 
-Each package has its own README with deeper diagrams:
+Each part has its own README:
+[`api`](api/README.md) (packages, routes, deviations from the TS server) ·
 [`client`](client/README.md) (UI route map) ·
-[`server`](server/README.md) (API map) ·
-[`reviewer-core`](reviewer-core/README.md) (review pipeline) ·
 [`e2e`](e2e/README.md).
 
 ## What works on day 1
 
 - **Local launch** — one command brings up Postgres (Docker) + API + web.
 - **Settings** — store your LLM API key (OpenAI / Anthropic) and GitHub token.
-- **Add repository** — paste a repo URL; the server clones and indexes it.
+- **Add repository** — paste a repo URL; the API clones and indexes it.
 - **Import pull requests** — pull open PRs and their diff, commits, body, and linked issue.
 - **View diff** — GitHub-like diff in the browser.
 - **Agents** — two built-in reviewers (General + Security); create/edit your own (model + system prompt).
@@ -91,8 +87,8 @@ These are intentionally **not** in the starter — each lesson adds one back:
 
 ## Prerequisites
 
-- **Node** ≥ 22 · **pnpm** ≥ 10 (`npm i -g pnpm`) · **Docker** (for Postgres)
 - **Go** (the version in `api/go.mod`) and a C compiler (cgo, for tree-sitter)
+- **Node** ≥ 22 · **pnpm** ≥ 10 (`npm i -g pnpm`), for the web app · **Docker** (for Postgres)
 
 ## Quick start (from zero)
 
@@ -102,19 +98,18 @@ These are intentionally **not** in the starter — each lesson adds one back:
 
 This script:
 1. starts Postgres (`docker compose up -d`) and waits until it's healthy,
-2. creates `server/.env` and `client/.env` from `.env.example` if missing,
+2. creates `api/.env` and `client/.env` from `.env.example` if missing,
 3. builds the Go API (`api/bin`) and installs deps in `client/` (only when
    `node_modules` is absent),
 4. applies DB migrations and seeds demo data (`api/bin/db`),
-5. launches the Go API (`:3001`, with `server/.env` loaded) and the web app (`:3000`).
+5. launches the Go API (`:3001`, with `api/.env` loaded) and the web app (`:3000`).
 
 Open **http://localhost:3000**. Press **Ctrl-C** to stop the dev servers —
 Postgres keeps running (`docker compose down` to stop it).
 
-Flags: `--no-seed` · `--no-client` · `--db-only` · `--ts-api` (run the old TS
-API from `server/` instead of the Go one) · `--help`.
+Flags: `--no-seed` · `--no-client` · `--db-only` · `--help`.
 
-> Add your keys in `server/.env` (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`,
+> Add your keys in `api/.env` (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`,
 > `GITHUB_TOKEN`) or via the Settings UI at runtime.
 
 ## Manual steps (what the script does)
@@ -125,15 +120,14 @@ docker compose up -d                                   # Postgres + pgvector
 cd api && make build     # bin/api, bin/db, bin/review
 ./bin/db migrate         # apply migrations (NOT run automatically on boot)
 ./bin/db seed            # idempotent demo data (optional)
-cd ../server && (set -a; . ./.env; set +a; ../api/bin/api)   # API on :3001
+(set -a; . ./.env; set +a; ./bin/api)   # API on :3001, with api/.env
 
 cd ../client && pnpm install && pnpm dev               # web on :3000
 ```
 
 ## Useful scripts
 
-`server/`: `dev` · `build` · `db:migrate` · `db:seed` · `db:generate` · `test` · `typecheck`
-(unit/integration split: `pnpm exec vitest run --exclude '**/*.it.test.ts'` / `pnpm exec vitest run .it.test`)
+`api/`: `make build` · `make check` (gofmt, vet, staticcheck, tests) · `make generate` (sqlc)
 `client/`: `dev` · `build` · `start` · `test` · `typecheck`
 
 ## Testing & CI
@@ -143,27 +137,24 @@ path filter — full strategy in **[`TESTING.md`](TESTING.md)**.
 
 | Suite | Workflow | Needs Docker |
 |-------|----------|--------------|
+| api (Go: vet, staticcheck, tests) | `api.yml` | yes |
 | client (vitest + jsdom) | `client.yml` | no |
-| server unit (hermetic) | `server-unit.yml` | no |
-| server integration (real Postgres) | `server-integration.yml` | yes |
-| reviewer-core (engine) | `reviewer-core.yml` | no |
 | web e2e (agent-browser, real stack) | `e2e-web.yml` | yes |
 
-Server tests split by filename: `*.it.test.ts` are DB-backed (testcontainers
-Postgres); everything else is hermetic. The browser e2e flows live in
+The Go database tests start Postgres with testcontainers. The browser e2e flows live in
 [`e2e/`](e2e/README.md) and run deterministically (no LLM).
 
 ## Troubleshooting
 
 - **`relation ... does not exist` / API errors on first run** — migrations weren't
-  applied. The server does **not** migrate on boot: run `cd api && go run ./cmd/db migrate`.
+  applied. The API does **not** migrate on boot: run `cd api && go run ./cmd/db migrate`.
 - **Port 5433 already in use** — Docker Postgres is published on host port `5433`
   (not `5432`, so it doesn't clash with a native Postgres). If something else holds
   5433, change the host port in `docker-compose.yml` **and** `DATABASE_URL` in
-  `server/.env` to match.
-- **`vector` type errors** — the migrator (`api/cmd/db migrate`, or the TS
-  `pnpm db:migrate`) enables the pgvector extension before applying the
-  migrations; the migration files themselves don't. Make sure you migrated with
-  one of them, against the Dockerized DB (it ships pgvector), not a different one.
+  `api/.env` to match.
+- **`vector` type errors** — the migrator (`api/cmd/db migrate`) enables the
+  pgvector extension before applying the migrations; the migration files
+  themselves don't. Make sure you migrated with it, against the Dockerized DB
+  (it ships pgvector), not a different one.
 - **Reset everything** — `docker compose down -v` drops the volume, then re-run
   `./scripts/dev.sh`.

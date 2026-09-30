@@ -33,9 +33,9 @@ API_PORT="${E2E_API_PORT:-3101}"
 WEB_PORT="${E2E_WEB_PORT:-3100}"
 
 # Exported BEFORE anything starts. The Go API and api/bin/db don't read
-# server/.env, so these are all the settings they get: no API keys, which the
-# flows don't need. WEB_PORT must be exported too: the API derives its CORS
-# allow-origin from it. 127.0.0.1 (not localhost) avoids an IPv6 ::1 vs
+# api/.env (only dev.sh loads it), so these are all the settings they get:
+# no API keys, which the flows don't need. WEB_PORT must be exported too: the
+# API derives its CORS allow-origin from it. 127.0.0.1 (not localhost) avoids an IPv6 ::1 vs
 # published-IPv4 mismatch against the container.
 export DATABASE_URL="postgres://${PG_USER}:${PG_PASS}@127.0.0.1:${PG_PORT}/${PG_DB}"
 export API_PORT WEB_PORT

@@ -1,13 +1,14 @@
 ---
 name: onboard
-description: Onboard a new team member to DevDigest — explain the project goal, tech stack, architecture, how the packages and server modules connect, and the end-to-end review flow, with diagrams and file paths verified against the current code. Use when someone says "onboard me", "explain this project", "how is this repo structured", "how do the modules connect", or is new to the codebase.
+description: Onboard a new team member to DevDigest — explain the project goal, tech stack, architecture, how the Go API, the web app and their packages connect, and the end-to-end review flow, with diagrams and file paths verified against the current code. Use when someone says "onboard me", "explain this project", "how is this repo structured", "how do the modules connect", or is new to the codebase.
 ---
 
 # DevDigest onboarding
 
 You are onboarding a **new engineer** to this repository. Your job is to give them
 an accurate mental model in ~15 minutes of reading, then point them at the code to
-read next. Write for a competent TypeScript developer who has never seen this repo.
+read next. Write for a competent developer who has never seen this repo; the
+backend is Go, the web app TypeScript.
 
 ## Ground rules
 
@@ -16,10 +17,11 @@ read next. Write for a competent TypeScript developer who has never seen this re
    module name, a table, a dependency), confirm it with `ls`, `grep`, or by
    reading the file. If the code disagrees with the baseline, trust the code and
    say what changed.
-2. **Cite files** as `path/to/file.ts` (with `:line` where useful) so the reader
+2. **Cite files** as `path/to/file.go` (with `:line` where useful) so the reader
    can click through.
-3. **Explain the *why*,** not only the *what* — e.g. why reviewer-core has no DB
-   access, why modules are registered statically, why grounding exists.
+3. **Explain the *why*,** not only the *what* — e.g. why `internal/review`
+   imports no HTTP, SQL or SDK package, why grounding exists, why the migrations
+   keep Drizzle's bookkeeping.
 4. **Don't dump the READMEs.** Synthesize; link to them for depth.
 5. Reply in the language the user wrote in.
 
@@ -33,11 +35,11 @@ Produce these sections, in this order:
 2. **Tech stack** — a table: layer → technology → where it lives.
 3. **Repository layout** — an annotated tree of the top-level folders and the
    important sub-folders (no more than ~40 lines).
-4. **How the packages connect** — a Mermaid diagram of packages + external
-   systems, then a short explanation of *how* code is shared (tsconfig path
-   aliases, not a workspace/published packages).
-5. **Inside the server** — a Mermaid diagram of request → plugins → module →
-   service → DI container → adapters / DB, plus a table of the feature modules
+4. **How the parts connect** — a Mermaid diagram of the API, the web app and
+   external systems, then how they share a contract (the HTTP JSON, described
+   by Zod schemas in the client).
+5. **Inside the API** — a Mermaid diagram of request → middleware → handler →
+   domain package → sqlc queries / adapters, plus a table of the Go packages
    and what each owns.
 6. **The core flow, end to end** — a Mermaid `sequenceDiagram` for
    *add repo → clone → index → import PRs → run review → findings in UI*.
@@ -45,7 +47,7 @@ Produce these sections, in this order:
    in the starter (filled by later lessons).
 8. **Running it locally** — the minimal commands, and the gotchas from
    "Known sharp edges" that are still true (re-check each one).
-9. **Testing & CI** — suites, how the unit/integration split works, workflows.
+9. **Testing & CI** — suites, how database tests get Postgres, workflows.
 10. **Where to start reading** — an ordered reading path of 8–10 files, one line
     each on why.
 11. **First-week tasks** — 3–5 small, concrete starter tasks tied to real code.
@@ -66,35 +68,32 @@ developer's machine; the only outbound calls are GitHub and the LLM provider.
 This repo is the **course starter**: it does one flow end to end, and each lesson
 (L01–L08 in `README.md`) adds a feature back as a new server module.
 
-### Packages (no monorepo workspace — each has its own `package.json` + lockfile)
+### Parts (no monorepo workspace — each has its own toolchain)
 
 | Folder | Package | Role | Port |
 |---|---|---|---|
+| `api/` | Go module | HTTP API, review engine, repo-intel, migrations, seed | 3001 |
 | `client/` | `@devdigest/web` | Next.js 15 studio UI (pnpm) | 3000 |
-| `server/` | `@devdigest/api` | Fastify 5 API + Drizzle/Postgres (pnpm) | 3001 |
-| `reviewer-core/` | `@devdigest/reviewer-core` | Pure review engine, no DB/FS/GitHub (npm) | — |
-| `server/src/vendor/shared` | `@devdigest/shared` | Zod contracts + adapter interfaces | — |
+| `client/src/vendor/shared` | `@devdigest/shared` | Zod contracts of the API's JSON | — |
 | `client/src/vendor/ui` | `@devdigest/ui` | Vendored UI primitives | — |
 | `e2e/` | `@devdigest/e2e` | Deterministic browser e2e (agent-browser) | — |
 
-Code sharing is via **tsconfig `paths`** (check `server/tsconfig.json`,
-`client/tsconfig.json`, `reviewer-core/tsconfig.json`):
-- server → `@devdigest/reviewer-core` = `../reviewer-core/src` (raw TS source)
-- server & reviewer-core → `@devdigest/shared` = `server/src/vendor/shared`
-- client → `@devdigest/shared` = **its own copy** in `client/src/vendor/shared`
+The backend was TypeScript (`server/`, Fastify, and `reviewer-core/`) until the
+Go rewrite; `git show ts-final:<path>` reads it. The API kept its routes and
+JSON, so the client talks to Go without knowing. `api/CLAUDE.md` has the Go
+code rules; `api/README.md` has every package and each deviation from TS.
 
 ### Tech stack
 
-- **Server:** Node ≥ 22, TypeScript, Fastify 5 (`helmet`, `cors`, `rate-limit`,
-  `fastify-sse-v2`), `fastify-type-provider-zod`, Drizzle ORM + `postgres`,
-  Postgres 16 + pgvector (Docker), `p-queue` job runner, Octokit, `simple-git`,
-  `@ast-grep/napi`, `dependency-cruiser`, `graphology` (PageRank), `js-tiktoken`,
-  ripgrep, OpenAI / Anthropic SDKs, OpenRouter (in reviewer-core).
+- **API:** Go (version in `api/go.mod`), standard library `net/http` routing,
+  `pgx` + `sqlc` (queries in `api/internal/postgres/queries/*.sql`), Postgres 16 +
+  pgvector (Docker), tree-sitter via cgo (TS/JS symbols), `tiktoken-go`, the
+  official Anthropic Go SDK; OpenAI/OpenRouter and GitHub clients on `net/http`.
 - **Client:** Next.js 15 App Router, React 19, TanStack Query, `next-intl`,
   Tailwind 4, `recharts`, `mermaid`, `react-markdown`.
-- **Tests:** Vitest everywhere; `@testing-library/react` + jsdom (client);
-  testcontainers Postgres (server `*.it.test.ts`); agent-browser (e2e).
-- **CI:** `.github/workflows/{client,server-unit,server-integration,reviewer-core,e2e-web}.yml`, path-filtered.
+- **Tests:** `go test -race` with testcontainers Postgres (`api/internal/pgtest`);
+  Vitest + `@testing-library/react` + jsdom (client); agent-browser (e2e).
+- **CI:** `.github/workflows/{api,client,e2e-web}.yml`, path-filtered.
 
 ### Package map
 
@@ -102,75 +101,62 @@ Code sharing is via **tsconfig `paths`** (check `server/tsconfig.json`,
 flowchart LR
   subgraph Host["Developer machine"]
     WEB["client/ · Next.js :3000"]
-    API["server/ · Fastify :3001"]
-    CORE["reviewer-core/<br/>pure review engine"]
+    API["api/ · Go :3001"]
     PG[("Postgres 16 + pgvector<br/>Docker")]
     FS[["clones/ · ~/.devdigest/secrets.json"]]
   end
-  SHARED["@devdigest/shared<br/>Zod contracts"]
   GH["GitHub API"]
   LLM["LLM: OpenAI · Anthropic · OpenRouter"]
 
   WEB -->|"REST + SSE (src/lib/api.ts)"| API
-  API -->|"import via tsconfig alias"| CORE
   API --> PG
   API --> FS
-  API -->|"Octokit"| GH
-  CORE -->|"injected LLMProvider"| LLM
-  SHARED -.-> WEB
-  SHARED -.-> API
-  SHARED -.-> CORE
+  API --> GH
+  API --> LLM
 ```
 
-### Server internals
+### API internals (`api/`)
 
-- Entry: `server/src/server.ts` → `server/src/app.ts` (plugins registered
-  **before** modules so they inherit helmet/cors/rate-limit/SSE/error handler).
-- Modules registered statically in `server/src/modules/index.ts`:
-  `settings`, `repos`, `pulls`, `polling`, `workspace`, `agents`, `reviews`,
-  `repoIntel`. Each is `modules/<name>/routes.ts` (+ `service.ts`,
-  `repository.ts`, `helpers.ts`, `constants.ts` where needed).
-- **Composition root / DI:** `server/src/platform/container.ts` — config, db,
-  `JobRunner`, SSE `runBus`, lazily built adapters, shared repositories
-  (`agentsRepo`, `reviewRepo`), `repoIntel` facade. Tests pass
-  `ContainerOverrides` (see `server/src/adapters/mocks.ts`).
-- **Adapters (ports → impls)** in `server/src/adapters/`: `llm/`, `github/`,
-  `git/`, `codeindex/` (ripgrep), `astgrep/`, `depgraph/`, `tokenizer/`,
-  `embedder/`, `secrets/`, `auth/`. Interfaces live in
-  `server/src/vendor/shared/adapters.ts`.
-- **Async work:** `server/src/platform/jobs.ts` — p-queue + `jobs` table with
-  timeout/retry. Clone → index jobs are enqueued from `modules/repos/service.ts`.
-- **Reviews:** route `POST /pulls/:id/review` → `ReviewService.runReview`
-  (`modules/reviews/service.ts`) creates run rows and fires
-  `ReviewRunExecutor.executeRuns` (`modules/reviews/run-executor.ts`) **without
-  awaiting**; progress streams over SSE (`/runs/:id/events`), and the trace is
-  persisted (`/runs/:id/trace`).
-- **repo-intel** (`server/src/modules/repo-intel/`, see its README): pipeline
-  `walk → ast-grep symbols → dependency-cruiser import graph → PageRank rank →
-  repo map`, stored in Postgres; consumers read only via the `repoIntel.*`
-  facade. Gated by `REPO_INTEL_ENABLED` and a per-agent `repo_intel` flag.
+- Entry: `api/cmd/api/main.go` builds every dependency (pool, secrets, runner,
+  jobs, repos store) and passes them into `httpapi.New` — no DI container.
+  `cmd/db` migrates and seeds; `cmd/review` reviews a diff from the shell.
+- Routes: `api/internal/httpapi/server.go` (`Handler`), one file per area
+  (`repos.go`, `pulls.go`, `agents.go`, `reviews.go`, `runs.go`,
+  `settings.go`, …); middleware in `middleware.go` (CORS, security headers,
+  panic recovery, request log).
+- Domain packages: `internal/review` (engine), `internal/diff`,
+  `internal/agents`, `internal/pulls`, `internal/repos`, `internal/repointel`.
+  Adapters: `internal/openai`, `internal/anthropic`, `internal/github`,
+  `internal/git`, `internal/secrets`. Interfaces are defined where they are
+  used (e.g. `review.LLM`).
+- **Async work:** `internal/jobs` (3 at a time, 2 min each, recorded in the
+  `jobs` table) runs clone → index; `internal/runner` runs reviews in the
+  background and streams each run's live log over SSE (`/runs/{id}/events`).
+- **repo-intel** (`internal/repointel`): tree-sitter symbols and references →
+  import graph → PageRank → repo map, stored in Postgres; a review reads the
+  map, file ranks and callers. Gated by `REPO_INTEL_ENABLED` and a per-agent
+  `repo_intel` flag.
 
 ```mermaid
 flowchart LR
-  REQ["HTTP"] --> PLUG["plugins<br/>helmet · cors · rate-limit · SSE"]
-  PLUG --> ROUTE["modules/&lt;name&gt;/routes.ts<br/>zod-validated"]
-  ROUTE --> SVC["service"]
-  SVC --> REPO["repository (Drizzle)"] --> PG[("Postgres")]
-  SVC --> DI{"Container"}
-  DI --> ADP["adapters<br/>llm · github · git · astgrep · …"]
-  DI --> JOBS["JobRunner (p-queue)"]
-  DI --> BUS["runBus (SSE)"]
-  SVC --> CORE["@devdigest/reviewer-core"]
+  REQ["HTTP"] --> MW["middleware<br/>log · recover · CORS · headers"]
+  MW --> H["httpapi handler"]
+  H --> DOM["domain package<br/>agents · pulls · repos"]
+  DOM --> Q["sqlc queries (pgx)"] --> PG[("Postgres")]
+  H --> RUN["runner"] --> ENG["review engine"]
+  ENG --> LLM["openai · anthropic"]
+  H --> JOBS["jobs"] --> RI["repointel"]
 ```
 
-### Review engine (`reviewer-core/src/`)
+### Review engine (`api/internal/review/`)
 
-`review/run.ts` (`reviewPullRequest`) → `prompt.ts` (`assemblePrompt`,
-`wrapUntrusted`, `INJECTION_GUARD`) → injected `LLMProvider`
-(`llm/openrouter.ts`) → `llm/structured.ts` (Zod → JSON Schema, parse-with-repair)
-→ `grounding.ts` (`groundFindings`: drop findings whose line is not in the diff;
-score recomputed from survivors). Optional slots (skills, memory, specs, callers,
-`reduce()`, `toReview()`) are wired by later lessons.
+`run.go` (`Run`: one call, or one per file for big diffs, then `merge`) →
+`prompt.go` (`Prompt.Assemble`, `untrusted` wrapping, `injectionGuard`) → the
+`LLM` interface → `structured.go` (JSON Schema `review.schema.json`, retry when
+the answer is invalid) → `grounding.go` (`Ground`: drop findings whose lines
+aren't in the diff) → `score` recomputed from the survivors. It imports no
+HTTP, SQL or SDK package; the runner (`internal/runner`) feeds it the diff and
+the repo-intel context.
 
 ### Client (`client/src/`)
 
@@ -181,38 +167,37 @@ Routes in `src/app/**/page.tsx`: `/`, `/onboarding`, `/repos/[repoId]/pulls`,
 colocated in `_components/<Name>/` with a sibling `*.test.tsx`. Shell/nav in
 `src/components/app-shell`, diff UI in `src/components/diff-viewer`.
 
-### Data model (`server/src/db/schema/*.ts`, migrations in `api/migrations`)
+### Data model (migrations in `api/migrations/*.sql`)
 
 The schema already contains **every** course table; many are empty in the
-starter. Group them by file (`core`, `repos`, `pulls`, `agents`, `reviews`,
-`runs`, `repo-intel`, `skills`, `knowledge`, `context`, `eval`, `ci`, `ops`) and
-mark which ones the starter actually writes (check with grep for
-`schema.<table>` / `t.<table>` usage in `server/src/modules`).
+starter. Group them by domain (core, repos, pulls, agents, reviews, runs,
+repo-intel, skills, knowledge, context, eval, ci, ops) and mark which ones the
+starter actually writes (grep `INSERT INTO` / `UPDATE` in
+`api/internal/postgres/queries/*.sql`). The TS Drizzle schema, with one file per
+domain, is at `ts-final:server/src/db/schema/`.
 
 ### Known sharp edges (re-verify each; drop any that are fixed)
 
 - **Postgres is on host port 5433, not 5432** (`docker-compose.yml`), so it
-  doesn't clash with a native Postgres. `server/.env.example`, `config.ts`,
-  `drizzle.config.ts` and CI all use 5433; the hermetic e2e stack
-  (`scripts/e2e.sh`) uses 5434. An old `server/.env` may still say 5432.
-- **Two copies of `@devdigest/shared`:** `server/src/vendor/shared` and
-  `client/src/vendor/shared` are separate files and have drifted
-  (`diff -rq server/src/vendor/shared client/src/vendor/shared`). A contract
-  change must be made in both.
-- **Migrations don't run on boot** — `pnpm db:migrate` (in `server/`) is required.
-- **reviewer-core uses npm, the others use pnpm**, and the API imports its raw
-  source, so `reviewer-core/node_modules` must exist or the API fails with
-  `ERR_MODULE_NOT_FOUND` (`scripts/dev.sh` handles it).
-- **Secrets are not in the DB or `.env` only** — `LocalSecretsProvider`
-  (`server/src/adapters/secrets/local.ts`) reads `~/.devdigest/secrets.json`
-  first, then `process.env`.
-- **Integration tests must be named `*.it.test.ts`** or the unit/integration
-  split breaks.
+  doesn't clash with a native Postgres. `api/.env.example`, the API's default
+  `DATABASE_URL` and CI all use 5433; the hermetic e2e stack
+  (`scripts/e2e.sh`) uses 5434.
+- **Migrations don't run on boot** — `api/bin/db migrate` (or
+  `go run ./cmd/db migrate` in `api/`) is required; `scripts/dev.sh` does it.
+- **The API doesn't read `api/.env` itself** — `scripts/dev.sh` loads it.
+  Started by hand, the API sees only the shell's environment.
+- **Building needs cgo** (tree-sitter) and a C compiler.
+- **Secrets are not in the DB or `.env` only** — `internal/secrets` reads
+  `~/.devdigest/secrets.json` first, then the environment.
+- **The contracts live only in the client** (`client/src/vendor/shared`): a
+  JSON change in the API must be mirrored there by hand.
+- **Database tests skip without Docker** (`internal/pgtest`), so a green
+  `make check` without Docker running tested less than it seems.
 
 ### Local run
 
 ```sh
-./scripts/dev.sh            # Postgres (Docker) → env files → deps → migrate → seed → API + web
+./scripts/dev.sh            # Postgres (Docker) → env files → build → migrate → seed → API + web
 # flags: --no-seed · --no-client · --db-only
 ```
 

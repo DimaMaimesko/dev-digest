@@ -1,9 +1,9 @@
 # Testing & CI strategy
 
-DevDigest is four independent packages (no workspace), so testing is organised
-as **one suite per package**, each with its own CI workflow, runner, and path
-filter. A package's suite runs only when that package (or a package it depends
-on at type-check time) changes.
+DevDigest is three independent parts (no workspace): the Go API, the web app
+and the browser e2e. Testing is organised as **one suite per part**, each with
+its own CI workflow, runner, and path filter. A suite runs only when its part
+(or a file it depends on) changes.
 
 ## Philosophy — typological, not exhaustive
 
@@ -13,8 +13,9 @@ workflow — and deliberately skips the rest. Concretely:
 
 - **Test behaviour at the seams**, not implementation details. Routes, adapters,
   contracts, the review pipeline, the rendered component.
-- **Mock the outside world.** LLMs, GitHub, and git are stubbed via
-  `server/src/adapters/mocks.ts` so unit tests are hermetic and key-free.
+- **Fake the outside world.** LLMs and GitHub are replaced by small
+  hand-written fakes (in-process `httptest` servers or structs implementing the
+  interface) in the `_test.go` files, so tests are hermetic and key-free.
 - **One real integration per data-backed workflow**, against a real Postgres —
   not a mock DB — because the bugs there live in SQL, migrations, and wiring.
 - **A few end-to-end browser flows** over the *main* user journeys, on seeded
@@ -26,10 +27,8 @@ If a test wouldn't catch a class of regression we care about, we don't write it.
 
 | Suite | Package | Kind | Runner | Workflow | Docker? |
 |-------|---------|------|--------|----------|---------|
+| api | `api/` | unit + integration (real Postgres) | `go test -race` | `api.yml` | **yes** |
 | client | `client/` | component / unit (jsdom) | vitest | `client.yml` | no |
-| server-unit | `server/` | unit (hermetic) | vitest | `server-unit.yml` | no |
-| server-integration | `server/` | integration (real Postgres) | vitest | `server-integration.yml` | **yes** |
-| reviewer-core | `reviewer-core/` | unit (engine) | vitest | `reviewer-core.yml` | no |
 | e2e web | `e2e/` | browser e2e (deterministic) | agent-browser + `run.ts` | `e2e-web.yml` | yes (stack) |
 
 ## What each suite covers
@@ -38,19 +37,13 @@ If a test wouldn't catch a class of regression we care about, we don't write it.
 + jsdom). `fetch` is mocked; no API, DB, or browser. Covers the PR-review
 surface (list, diff, findings, run controls) and the agent editor.
 
-**server-unit** — the DB-free majority: adapters, prompt assembly, grounding,
-repo-intel ranking & indexing, pricing, route smoke. The `typecheck` job also
-runs on Windows, which doubles as the `@ast-grep/napi` prebuilt gate (install
-fails there if the win32 prebuilt is missing).
-
-**server-integration** — the `*.it.test.ts` files. Each starts a real Postgres
-(pgvector) via testcontainers, builds the Fastify app, migrates + seeds, and
-drives routes end-to-end: reviews + run lifecycle (incl. grounding), agents CRUD,
-repo-intel symbol clamping, pulls comments, settings models. They self-skip when
-Docker is unavailable.
-
-**reviewer-core** — the pure engine: `toReview` selection, prompt construction,
-and a `run` with a stubbed model → grounded findings. No DB / GitHub / FS.
+**api** — `make check`: gofmt, `go vet`, staticcheck and `go test -race`.
+Domain packages (`internal/review`, `internal/diff`, `internal/repointel`, …)
+are tested without I/O: prompt assembly, grounding, diff parsing, the repo-intel
+index against golden files. Database-backed tests (routes in
+`internal/httpapi`, the runner, jobs, migrations, seed) get a throwaway
+migrated Postgres from `internal/pgtest`: one testcontainers pgvector container
+per test binary, one database per test. They skip when Docker isn't running.
 
 **e2e web** — see `e2e/README.md`. Deterministic agent-browser flows over the
 main journeys (boot → PR list → PR detail; agents) against a real seeded stack.
@@ -60,13 +53,8 @@ No `chat`, no model key.
 
 ```sh
 # per package
-cd client        && pnpm test           # + pnpm typecheck
-cd reviewer-core && npm test
-
-# server — the unit/integration split (see note below)
-cd server && pnpm exec vitest run --exclude '**/*.it.test.ts'   # unit, no Docker
-cd server && pnpm exec vitest run .it.test                      # integration, needs Docker
-cd server && pnpm test                                          # both
+cd api    && make check          # needs Docker for the database tests
+cd client && pnpm test           # + pnpm typecheck
 
 # browser e2e (needs the full stack + agent-browser CLI)
 ./scripts/dev.sh
@@ -76,20 +64,14 @@ cd e2e && npm install && npm test
 
 ## Conventions
 
-- **Integration tests end in `*.it.test.ts`.** The unit lane excludes that glob
-  (`vitest run --exclude '**/*.it.test.ts'`); the integration lane selects only
-  it (`vitest run .it.test`). A DB-backed test that imports `test/helpers/pg.ts`
-  must use the `.it.test.ts` suffix.
-- **`server/package.json` is `skip-worktree`** (a local variant diverges from the
-  committed file). CI therefore invokes the split with
-  `pnpm exec vitest run …` rather than relying on committed `test:unit` /
-  `test:integration` scripts.
-- **Hermetic by default.** Reach for `src/adapters/mocks.ts` (MockLLMProvider,
-  MockGitClient) rather than real network/keys.
+- **Go tests are table-driven** (`t.Run`), with the standard `testing`
+  package only: no assertion or mock libraries.
+- **Hermetic by default.** Models and GitHub are fakes in the tests; no test
+  needs a real key or network access beyond Docker.
 - **E2E specs are deterministic batch JSON** (`e2e/specs/*.flow.json`) using
   only `--url` / `--text` / `find` locators — never the AI `chat` command.
-- **CI is path-filtered per package.** Cross-package source aliases are encoded
-  in each workflow's `paths:` (e.g. `reviewer-core/**` triggers `server-unit`
-  because the server type-checks against `../reviewer-core/src`).
-- **`server/clones/**` is runtime data** (git-ignored) and never collected by
-  any suite.
+- **CI is path-filtered per part.** Files a suite depends on outside its
+  folder are in its workflow's `paths:` (e.g. `docs/agent-prompts/**` triggers
+  `api`, because a test keeps the seed's embedded prompts equal to them).
+- **`api/clones/`** (with dev.sh's default `DEVDIGEST_CLONE_DIR=./clones`) **is
+  runtime data**, git-ignored and never read by any suite.

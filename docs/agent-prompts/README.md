@@ -16,7 +16,7 @@ in the DB). The canonical, reviewable copies live next to this file:
 
 ## How a prompt is assembled
 
-Assembly happens in `reviewer-core/src/prompt.ts` (`assemblePrompt`). The model
+Assembly happens in [`api/internal/review/prompt.go`](../../api/internal/review/prompt.go) (`Prompt.Assemble`). The model
 receives exactly two messages:
 
 **System message** = your agent prompt **+** a fixed injection guard:
@@ -27,13 +27,13 @@ receives exactly two messages:
 <INJECTION_GUARD>   // appended verbatim to EVERY agent, every run
 ```
 
-`INJECTION_GUARD` (`prompt.ts:16`) tells the model that everything inside
+`injectionGuard` (in `prompt.go`) tells the model that everything inside
 `<untrusted>…</untrusted>` is data, never instructions, and that claims like "test
 fixture / not for production / ignore this" never descope the review. You do not
 need to repeat any of this in your prompt — it is always there.
 
 **User message** = the task and all context, in this order, each untrusted block
-delimiter-wrapped (`prompt.ts:104-122`):
+delimiter-wrapped (`Prompt.Assemble`):
 
 ```
 <task line, e.g. "Review PR #7 '…'">
@@ -56,14 +56,14 @@ This is the most common source of confusion. The structure of the response — t
 `{ verdict, summary, score, findings[] }` object and every field type — is enforced
 **out of band** by the provider, not by prompt text:
 
-```ts
-// reviewer-core/src/llm/openrouter.ts
-response_format: { type: 'json_schema', json_schema: { name, schema, strict: true } }
+```go
+// api/internal/openai/openai.go (OpenAI, OpenRouter): the request carries
+"response_format": {"type": "json_schema", "json_schema": {"name": …, "schema": …, "strict": true}}
 ```
 
-The schema is the Zod `Review` contract in
-`server/src/vendor/shared/contracts/findings.ts`, converted to JSON Schema and sent
-as a separate API parameter. In `strict` mode the model **cannot** return anything
+The schema is [`api/internal/review/review.schema.json`](../../api/internal/review/review.schema.json)
+(the JSON Schema of the `Review` contract), sent as a separate API parameter;
+Anthropic gets it as the input schema of a tool the model is forced to call. In `strict` mode the model **cannot** return anything
 that doesn't match it. Consequences for prompt authors:
 
 - **Do not describe the JSON shape, field names, or a markdown layout in the prompt.**
@@ -102,16 +102,16 @@ numbers and gates from what the model returns:
 
 ## How the engine uses the output (why the conventions matter)
 
-`reviewer-core/src/review/run.ts` + `reduce.ts`:
+[`api/internal/review/run.go`](../../api/internal/review/run.go) + `grounding.go`:
 
 - **`score` is recomputed**, never trusted from the model:
-  `scoreFromFindings(grounded)` (`reduce.ts:27`). 0 findings ⇒ 100; each CRITICAL
+  `score(findings)` in `run.go`, over the grounded findings. 0 findings ⇒ 100; each CRITICAL
   −35, WARNING −12, SUGGESTION −3. So the number on screen always matches the
   findings list. The model's self-reported score is ignored.
 - **Findings are citation-grounded**: a finding whose line range doesn't intersect a
-  real diff hunk is dropped (`grounding.ts`). Cite real `file:line` from the diff or
+  real diff hunk is dropped (`Ground` in `grounding.go`). Cite real `file:line` from the diff or
   the finding disappears.
-- **`verdict` is currently passed through from the model** (`run.ts:208`). That is
+- **`verdict` is currently passed through from the model** (`merge` in `run.go`; a map-reduce run keeps the most serious one). That is
   why a wrong verdict reaches the UI unchanged — and why the verdict convention
   above is load-bearing until/unless the verdict is also derived deterministically.
 
