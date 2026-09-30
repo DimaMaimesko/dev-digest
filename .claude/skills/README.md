@@ -17,6 +17,7 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [security](security/SKILL.md) | Full-stack | OWASP Top 10:2025, auth, injection, uploads, secrets |
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
 | [onboard](onboard/SKILL.md) | Project | New-team-member onboarding: goal, stack, architecture, module connections, diagrams |
+| [engineering-insights](engineering-insights/SKILL.md) | Project | End-of-task capture of non-obvious lessons into each part's `INSIGHTS.md`; format checker |
 
 ## What Are Skills?
 

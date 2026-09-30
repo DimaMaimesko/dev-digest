@@ -31,6 +31,13 @@ Go 1.26 (cgo for tree-sitter) · Postgres 16 + pgvector · Next.js 15, React 19 
 - `api/clones/` is runtime data (git-ignored). It holds full clones, including an old copy of
   this repo with a stale CLAUDE.md. Never read or edit it as project code.
 
+## Insights loop
+- Before the first change in a task, read the `INSIGHTS.md` of each part you'll touch (the root
+  one too for env, scripts or CI). Trust its entries unless the code says otherwise. Then name the
+  3 entries most relevant to the task, one line each, or say "no relevant insights".
+- At the end of a task that hit a failure, a wrong turn or a decision, run `/engineering-insights`.
+  Don't skip it: it's how the next session avoids the same trap.
+
 ## Read when needed
 - End-to-end behavior of the product → `specs/review-flow.md`
 - Architecture overview → `README.md`; testing strategy → `TESTING.md`
