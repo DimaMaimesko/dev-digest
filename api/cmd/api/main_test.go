@@ -56,10 +56,6 @@ func TestLoadConfig(t *testing.T) {
 		{name: "no HOME", env: map[string]string{"HOME": ""}, wantErr: "HOME is not set"},
 		{name: "bad web port", env: map[string]string{"WEB_PORT": "x"}, wantErr: `WEB_PORT "x"`},
 		{name: "bad log level", env: map[string]string{"LOG_LEVEL": "loud"}, wantErr: `LOG_LEVEL "loud"`},
-		{name: "TS_API_URL without a scheme", env: map[string]string{"TS_API_URL": "localhost:3001"}, wantErr: `TS_API_URL "localhost:3001"`},
-		{name: "TS_API_URL not http", env: map[string]string{"TS_API_URL": "ftp://localhost:3001"}, wantErr: `TS_API_URL "ftp://localhost:3001"`},
-		{name: "TS_API_URL pointing at itself", env: map[string]string{"TS_API_URL": "http://localhost:3001"}, wantErr: "forward requests to itself"},
-		{name: "TS_API_URL pointing at itself by IP", env: map[string]string{"API_PORT": "3002", "TS_API_URL": "http://127.0.0.1:3002"}, wantErr: "forward requests to itself"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -82,8 +78,8 @@ func TestLoadConfig(t *testing.T) {
 	}
 }
 
-// A relative DEVDIGEST_CLONE_DIR is relative to the working directory, as in
-// the TS server, whose .env sets ./clones.
+// A relative DEVDIGEST_CLONE_DIR is relative to the working directory, as
+// .env.example's ./clones is.
 func TestRelativeCloneDir(t *testing.T) {
 	cfg, err := loadConfig(func(k string) string {
 		return map[string]string{"HOME": "/home/ann", "DEVDIGEST_CLONE_DIR": "./clones"}[k]
@@ -94,23 +90,6 @@ func TestRelativeCloneDir(t *testing.T) {
 	wd, _ := os.Getwd()
 	if want := filepath.Join(wd, "clones"); cfg.cloneDir != want {
 		t.Errorf("cloneDir = %q, want %q", cfg.cloneDir, want)
-	}
-}
-
-func TestTSAPIURL(t *testing.T) {
-	cfg, err := loadConfig(func(k string) string {
-		return map[string]string{"HOME": "/h", "API_PORT": "3002", "TS_API_URL": "http://localhost:3001"}[k]
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.tsAPI == nil || cfg.tsAPI.String() != "http://localhost:3001" {
-		t.Errorf("tsAPI = %v", cfg.tsAPI)
-	}
-
-	cfg, _ = loadConfig(func(k string) string { return map[string]string{"HOME": "/h"}[k] })
-	if cfg.tsAPI != nil {
-		t.Errorf("tsAPI = %v without TS_API_URL, want nil", cfg.tsAPI)
 	}
 }
 

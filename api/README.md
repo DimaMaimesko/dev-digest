@@ -1,20 +1,15 @@
 # `api/` — DevDigest backend in Go
 
-A Go rewrite of [`server/`](../server/README.md) and
-[`reviewer-core/`](../reviewer-core/README.md), built to serve the existing
-Next.js client unchanged. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
+The DevDigest backend: the HTTP API the Next.js client calls, the review
+engine and repo-intel. Rules for the code are in [`CLAUDE.md`](CLAUDE.md).
 
-**Status:** phases 1 to 5 of 6 are done. The review engine runs from the
-command line, and the HTTP API serves all 22 of the TS server's `GET` routes,
-runs reviews, and adds, clones, indexes and deletes repositories: all 40 of
-its routes are ported, and match the TS server on the dev database (see the
-parity test below). The database is migrated and seeded from Go too
-(`cmd/db`), and `./scripts/dev.sh`, `./scripts/e2e.sh` and the `e2e web`
-workflow run the web app on the Go server alone. The TS server stays in the
-repository for now, as the reference the parity tests compare with
-(`./scripts/dev.sh --ts-api` runs it instead of the Go server). With a GitHub token, reading pull
-requests first syncs them from GitHub, as in TS; without one, or when GitHub
-can't be reached, the saved ones are served.
+It is a rewrite of the TypeScript backend, `server/` (Fastify) and
+`reviewer-core/`, which were removed once all of it was ported. The last
+commit that has them is `e9e4574` (tag `ts-final`); the "Ported from" paths
+below refer to it. All 40 routes serve the same JSON as the TS server did,
+checked against it on the dev database, so the client didn't change. With a
+GitHub token, reading pull requests first syncs them from GitHub; without
+one, or when GitHub can't be reached, the saved ones are served.
 
 ## Migrate and seed the database
 
@@ -28,19 +23,18 @@ Both use `DATABASE_URL` (default: the docker-compose database). The
 migrations live in [`migrations/`](migrations), in Drizzle's format, and are
 built into the binary (`migrations.FS`), so `bin/db` runs from any directory.
 `internal/migrate` records them the way Drizzle's migrator does, in
-`drizzle.__drizzle_migrations`, with the same SHA-256 and time: a database
-either one migrated goes on with the other. The TS server kept in `server/`
-applies the same folder (`pnpm db:migrate`, and its tests).
+`drizzle.__drizzle_migrations`, with the same SHA-256 and time, so a
+database the TS server migrated goes on with Go.
 
 To change the schema, add the next `NNNN_name.sql` and its entry at the end of
 `migrations/meta/_journal.json` (a later `when`), then `make generate`. Never
 edit an applied migration. The `meta/*_snapshot.json` files are drizzle-kit's
-record of the TS schema: `pnpm exec drizzle-kit generate` in `server/` still
-writes here, but a migration written by hand doesn't update them. The seed is idempotent, like the
-TS one: it adds only what isn't there, and never overwrites a setting.
+record of the TS schema up to the last TS migration; migrations written by
+hand don't update them. The seed is idempotent, like the TS one: it adds only
+what isn't there, and never overwrites a setting.
 
-Checked on throwaway databases: one migrated and seeded by the TS server,
-one by Go, and one by TS then Go. The schemas (`pg_dump --schema-only`),
+Checked, while both existed, on throwaway databases: one migrated and seeded
+by the TS server, one by Go, and one by TS then Go. The schemas (`pg_dump --schema-only`),
 Drizzle's records and every seeded row were identical, and Go found nothing
 to do on the TS one. The test databases (`internal/pgtest`) are migrated
 with `internal/migrate`.
@@ -51,23 +45,22 @@ with `internal/migrate`.
 on :3001 with the web app on :3000.
 
 It uses the same database, environment variables and secrets file
-(`~/.devdigest/secrets.json`) as the TS server. The database must be migrated
-and seeded, as `./scripts/dev.sh` does.
+(`~/.devdigest/secrets.json`) as the TS server did. The database must be
+migrated and seeded, as `./scripts/dev.sh` does.
 
-Unlike the TS server, it doesn't read `server/.env`: `dev.sh` loads that file
-for it (a variable already set in the shell wins, as with dotenv) and starts
-it from `server/`, so relative paths such as `DEVDIGEST_CLONE_DIR=./clones`
-resolve the same way. To run it by hand, next to the TS server, on another
-port:
+It doesn't read `api/.env` itself: `dev.sh` copies it from
+[`.env.example`](.env.example) on the first run, loads it for the Go commands
+(a variable already set in the shell wins, as with dotenv) and starts the API
+from `api/`, so relative paths such as `DEVDIGEST_CLONE_DIR=./clones` resolve
+there. To run it by hand, on another port:
 
 ```sh
-cd api && make build   # writes bin/api and bin/review
-cd ../server
-(set -a; . ./.env; set +a; API_PORT=3002 ../api/bin/api)
+cd api && make build   # writes bin/api, bin/db and bin/review
+(set -a; . ./.env; set +a; API_PORT=3002 ./bin/api)
 curl localhost:3002/workspace
 ```
 
-## Writes ported so far
+## Writes
 
 The agent writes: `POST /agents`, `PUT /agents/{id}`, `DELETE /agents/{id}`
 and `POST /agents/{id}/skills`. A config change gives the agent a new version
@@ -86,16 +79,12 @@ app doesn't call it.
 `POST /pulls/{id}/comments` posts a review comment, or a reply, to GitHub.
 Like reading the comments, it passes through to GitHub; nothing is saved.
 
-`PUT /settings`, checked by the parity test with requests that change
-nothing: an empty update and invalid ones. It validates the known preferences like the TS server's Zod
+`PUT /settings` validates the known preferences like the TS server's Zod
 schema, and saves all keys in one transaction.
 
 `POST /settings/test-connection` saves an API key or GitHub token to
 `~/.devdigest/secrets.json`, when the request has one, then tests the saved
-one with a cheap call: the model list, or GitHub's `GET /user`. It moved
-last: the TS server reads that file once and caches it, so a key the Go
-server saves only reaches it after a restart, and it had to wait until no
-route left on the TS server read that cache.
+one with a cheap call: the model list, or GitHub's `GET /user`.
 
 **The repo-intel index.** After each clone, a job indexes the repository
 (`repointel.Indexer`): the symbols and references of its TypeScript and
@@ -127,73 +116,26 @@ in the clone removes it.
 once; `internal/runner` runs them in the background, one after another, and
 saves each review, its findings and a trace. `GET /runs/{id}/events` streams a
 run's live log as server-sent events, and `POST /runs/{id}/cancel` stops one.
-The three moved together: the TS server keeps a run's live log in memory, so a
-run it started can't be followed on the Go server. When the Go server starts,
-it marks runs left running as failed, as TS does; so does the TS server when
-it starts, including runs the Go server is running, so don't restart the TS
-server during a review.
+The live log is kept in memory, so when the server starts, it marks runs
+left running by a stopped server as failed, as TS did.
 
-## Use the web app with the Go server
+## How it was checked against the TS server
 
-`./scripts/dev.sh` does this: the web app on :3000 uses the Go server on
-:3001, alone.
+While both servers existed, a parity test called the running TS server and
+the Go handlers on the same database and required the same status and JSON,
+walking the real data: every repository, its index state and pull requests;
+each pull request's detail, reviews and runs, and each run's trace; every
+agent, its skills and each saved version; plus the not-found cases. Another
+compared the Go GitHub client with what the TS server fetched from GitHub.
+During the move, the Go server forwarded the routes it didn't handle yet to
+the TS server, so the web app could run on it throughout. Both are gone with
+the TS code (`ts-final` has them, in `internal/httpapi`).
 
-The Go server can still forward a request it doesn't handle to the TS server
-(`TS_API_URL`), which was how the web app kept working while routes moved
-over; without it, such a request is a 404. The steps below run both, as
-during the move:
-
-1. Keep the TS server running on :3001 (`./scripts/dev.sh --ts-api`).
-2. Start the Go server on :3002, forwarding to it:
-
-   ```sh
-   cd api && make build
-   cd ../server && (set -a; . ./.env; set +a; API_PORT=3002 TS_API_URL=http://localhost:3001 ../api/bin/api)
-   ```
-
-3. Restart the web app pointed at the Go server (a shell variable overrides
-   `client/.env`):
-
-   ```sh
-   cd client && NEXT_PUBLIC_API_BASE=http://localhost:3002 pnpm dev
-   ```
-
-Every response carries `X-Served-By: go` or `X-Served-By: ts`, visible in the
-browser's network tab, and the Go server's request log shows the same as
-`by=go` / `by=ts`. Without `TS_API_URL`, unported routes answer 404.
-
-The Go server answers CORS preflights itself and removes the TS server's CORS
-and security headers from forwarded responses, so each header appears once.
-Streamed responses, such as a run's live events, are passed on as they arrive.
-
-## Checking it matches the TS server
-
-`TestParityWithTypeScript` calls a running TS server and the Go handlers on
-the same database, and requires the same status and JSON. It walks the real
-data: every repository, its index state and pull requests; each pull
-request's detail, reviews and runs, and each run's trace; every agent, its
-skills and each saved version; plus the not-found cases. Lists are compared in any order, and times as
-instants:
-
-```sh
-./scripts/dev.sh --ts-api --no-client   # the TS server on :3001
-PARITY_TS_URL=http://localhost:3001 go test ./internal/httpapi -run Parity -v
-```
-
-The Go handler in this test has GitHub turned off, so it never writes to the
-dev database. `TestGitHubClientWithTypeScript`, in the same run, checks the Go
-GitHub client instead: for up to 3 pull requests of each repository, what the
-TS server has just fetched from GitHub must equal what the Go client reads. It
-only reads, and skips repositories GitHub doesn't know, such as the seed data.
-
-The review routes are compared only with requests that start nothing. To
-check the reviews themselves, the dev database was copied into a throwaway
+To check the reviews themselves, the dev database was copied into a throwaway
 one and both servers reviewed the same pull requests with a recording fake
 model, one of them a change to a copy of the dev-digest clone: the prompts
 they sent, from the diff to the callers and the repository map, were
 identical to the byte.
-
-Add each newly ported route to the walk in `internal/httpapi/parity_test.go`.
 
 ## Review a diff from the command line
 
@@ -234,13 +176,13 @@ request, and `review` owns the loop, once. Provider adapters stay thin.
 
 The prompt must stay byte-for-byte what the TS engine sends. The files in
 `internal/review/testdata/*.golden` were produced by running `assemblePrompt`
-from `reviewer-core` on the same input as the Go test. Once the TS server is
-removed, they become plain regression fixtures.
+from `reviewer-core` on the same input as the Go test. With the TS code gone,
+they are regression fixtures: change them only on purpose.
 
 | `internal/openai` | Client for OpenAI-compatible chat completions APIs (OpenAI, OpenRouter, Ollama, vLLM), written with `net/http`. Implements `review.LLM`, and lists models. | `reviewer-core/src/llm/openrouter.ts`, `completeStructured` and `listModels` in `server/src/adapters/llm/openai.ts` |
 | `cmd/review` | The review command above | — |
-| `cmd/api` | The HTTP API server: settings from the environment, graceful shutdown, optional forwarding to the TS server (`TS_API_URL`) | `server/src/server.ts`, `platform/config.ts` |
-| `internal/httpapi` | Routes, JSON and the error envelope, CORS, security headers, request logs, and the proxy for routes not ported yet | `server/src/app.ts`, the `modules/*/routes.ts` files |
+| `cmd/api` | The HTTP API server: settings from the environment, graceful shutdown | `server/src/server.ts`, `platform/config.ts` |
+| `internal/httpapi` | Routes, JSON and the error envelope, CORS, security headers, request logs | `server/src/app.ts`, the `modules/*/routes.ts` files |
 | `internal/postgres` | Database queries: SQL in `queries/`, Go generated by [sqlc](https://sqlc.dev) (`make generate`) from the schema in `migrations/` | the Drizzle repositories |
 | `internal/agents` | Creating and changing agents, with their version history | `server/src/modules/agents/repository.ts`, `service.ts`, `helpers.ts` |
 | `internal/github` | Client for the parts of GitHub's REST API DevDigest uses (pull requests, their files, commits and review comments), written with `net/http`: retries rate limits, and server errors for reads, 30 s per request | `server/src/adapters/github/octokit.ts`, `platform/resilience.ts` |

@@ -1,6 +1,6 @@
 // Package httpapi serves the DevDigest HTTP API that the web app calls. Its
-// routes and JSON match the TypeScript server's, so the web app works
-// against either.
+// routes and JSON are those of the TypeScript server it replaced, which the
+// web app was built against.
 package httpapi
 
 import (
@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
-	"net/url"
 	"strconv"
 	"time"
 
@@ -36,7 +35,6 @@ type Server struct {
 	webOrigin string
 	cloneDir  string
 	secrets   *secrets.Store
-	fallback  *url.URL
 	agents    *agents.Store
 	pulls     *pulls.Store
 	githubAPI string
@@ -57,20 +55,16 @@ type Config struct {
 	CloneDir  string // where repositories are cloned
 	Secrets   *secrets.Store
 	Log       *slog.Logger
-	// Fallback, when set, is the TS server's base URL, such as
-	// "http://localhost:3001". Requests the Go server doesn't handle yet go
-	// there instead of getting a 404.
-	Fallback *url.URL
 	// GitHubAPI is GitHub's API base URL, such as github.DefaultURL. When it
 	// is empty, pull requests are never synced from GitHub.
 	GitHubAPI string
 	// ModelAPIs are the model providers' APIs, for the model lists.
 	ModelAPIs ModelAPIs
 	// Runner runs reviews. Without one, the review, events and cancel
-	// routes are left to the TS server.
+	// routes answer 404.
 	Runner *runner.Runner
 	// Repos adds, refreshes and removes repositories. Without it, those
-	// routes are left to the TS server.
+	// routes answer 404.
 	Repos *repos.Store
 }
 
@@ -85,7 +79,6 @@ func New(cfg Config) *Server {
 		webOrigin: cfg.WebOrigin,
 		cloneDir:  cfg.CloneDir,
 		secrets:   cfg.Secrets,
-		fallback:  cfg.Fallback,
 		agents:    agents.NewStore(cfg.DB),
 		pulls:     pulls.NewStore(cfg.DB),
 		githubAPI: cfg.GitHubAPI,
@@ -143,12 +136,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /runs/{id}", s.deleteRun)
 	mux.HandleFunc("POST /findings/{id}/accept", s.acceptFinding)
 	mux.HandleFunc("POST /findings/{id}/dismiss", s.dismissFinding)
-	// Any other method or path: a route not ported yet.
-	if s.fallback != nil {
-		mux.Handle("/", fallbackProxy(s.fallback, s.log))
-	} else {
-		mux.HandleFunc("/", notFound)
-	}
+	mux.HandleFunc("/", notFound)
 
 	return logRequests(s.log, recoverPanics(s.log, cors(s.webOrigin, securityHeaders(mux))))
 }

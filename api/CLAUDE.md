@@ -1,29 +1,23 @@
 # api/ — DevDigest backend in Go
 
-This module is a Go rewrite of `server/` (Fastify) and `reviewer-core/`. The
-Next.js client in `client/` stays as it is, so the Go API must serve the same
-HTTP routes and the same JSON shapes.
+This module is the DevDigest backend, a Go rewrite of the TypeScript
+`server/` (Fastify) and `reviewer-core/`. Those were removed once everything
+was ported; they live on at commit `e9e4574` (tag `ts-final`), e.g.
+`git show ts-final:server/src/app.ts`. The Next.js client in `client/` was
+built against them, so the API keeps the same HTTP routes and JSON shapes.
 
 The owner is learning Go. The code must be **idiomatic Go**, not TypeScript
 translated line by line ("don't write Java in Go").
 
-## Porting rule: port behavior, not structure
+## The TS code as a reference: behavior, not structure
 
-The TypeScript code is the reference for *what* the system does: routes, JSON
-shapes, business rules. Its tests are the spec. It is not a guide to *how* Go
-code should be organized.
+When a question is "what did the old server do?" (a route's edge case, a JSON
+field, a business rule), `ts-final` and its tests answer it. They are never a
+guide to *how* Go code should be organized.
 
-- Before porting a file, read its TS tests and every caller.
-- If the TS code has a bug, fix it in Go, add a test for it, and list it under
-  "Deviations from the TS code" in `README.md`.
-- If a TS pattern has no Go equivalent, don't imitate it. Write it the Go way
-  and explain the difference in the commit message.
-- Order the moves by shared state. While both servers run (the Go server
-  forwards unported routes to TS), a route that writes state the TS server
-  caches in memory must move only after every TS route that reads that cache.
-  Example: `POST /settings/test-connection` writes `secrets.json`, which TS
-  reads once and caches, so it stayed on TS until every route reading that
-  cache had moved.
+- A TS bug is fixed in Go, with a test, and listed under "Deviations from the
+  TS code" in `README.md`.
+- A TS pattern with no Go equivalent is not imitated. Write it the Go way.
 
 ## Go rules
 
@@ -89,17 +83,16 @@ Run from `api/`:
 
 - `make check`: gofmt check, `go vet`, `staticcheck`, `go test -race`. Run it before every commit. Database tests need Docker running. Building needs cgo (tree-sitter) and a C compiler.
 - `make generate`: regenerate `internal/postgres` after changing SQL.
-- `PARITY_TS_URL=http://localhost:3001 go test ./internal/httpapi -run Parity -v`: compare with the running TS server (`./scripts/dev.sh --ts-api` starts it).
 - `make fmt`: format everything.
 - `go run ./cmd/db migrate` and `go run ./cmd/db seed`: prepare a database (DATABASE_URL).
 
 ## Status
 
-The migration plan has 6 phases. Update this list as phases finish.
+The migration from TS is finished: all 6 phases are done.
 
 1. ✅ Port `reviewer-core` into `internal/review`, with an OpenAI-compatible adapter and the `cmd/review` CLI
-2. ✅ API skeleton and the database-backed read endpoints (18 of 22 `GET` routes; the other 4 need GitHub, the LLM adapters or the run bus). Add each new route to the walk in `parity_test.go`.
+2. ✅ API skeleton and the database-backed read endpoints (18 of 22 `GET` routes; the other 4 need GitHub, the LLM adapters or the run bus), each checked by a parity test against the running TS server.
 3. ✅ Write paths. ✅ Fallback proxy (`TS_API_URL`): unported routes are forwarded to the TS server, so the web app can run on the Go server. ✅ `PUT /settings`. ✅ Agent writes (`internal/agents`). ✅ Accept and dismiss findings, delete reviews and runs. ✅ GitHub sync on pull request reads, `POST /repos/{id}/poll` (`internal/github`, `internal/pulls`). ✅ PR comments, read and post. ✅ Model lists (`internal/anthropic`). The repository routes and `POST /settings/test-connection` move in phase 5.
-4. ✅ Reviews: inputs (`internal/git`, `internal/repointel` with the tree-sitter callers), Anthropic for reviews, the run executor (`internal/runner`), and the review, events and cancel routes. Prompts checked byte-for-byte against TS with fake models. `POST /settings/test-connection` moves with phase 5 (see "Order the moves by shared state").
+4. ✅ Reviews: inputs (`internal/git`, `internal/repointel` with the tree-sitter callers), Anthropic for reviews, the run executor (`internal/runner`), and the review, events and cancel routes. Prompts checked byte-for-byte against TS with fake models. `POST /settings/test-connection` moves with phase 5: it writes `secrets.json`, which the TS server read once and cached, so it moved after every route reading that cache.
 5. ✅ Repositories: clone and fetch, job runner, `POST /repos`, refresh, delete (`internal/repos`, `internal/jobs`); the repo-intel indexer and `POST /repos/{id}/resync` (`repointel.Indexer`; checked against the TS index table by table); `POST /settings/test-connection`. All 40 routes are ported.
-6. **In progress:** ✅ Migrations and seed in Go (`internal/migrate`, compatible with Drizzle's bookkeeping; `internal/seed`; `cmd/db`). ✅ The migrations moved to `api/migrations` (embedded); the TS server points there. ✅ `scripts/dev.sh`, `scripts/e2e.sh` and the `e2e web` workflow run the Go server (`dev.sh --ts-api` runs the TS one, for the parity test). Don't delete `server/`: the owner keeps it as the reference. Removing `reviewer-core/` and the TS workflows waits for the owner's go-ahead.
+6. ✅ Migrations and seed in Go (`internal/migrate`, compatible with Drizzle's bookkeeping; `internal/seed`; `cmd/db`), with the migrations in `api/migrations` (embedded). `scripts/dev.sh`, `scripts/e2e.sh` and the `e2e web` workflow run the Go server, with its settings in `api/.env`. `server/`, `reviewer-core/`, their workflows, the fallback proxy (`TS_API_URL`) and the parity test are removed; `ts-final` keeps them.
