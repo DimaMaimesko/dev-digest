@@ -73,16 +73,14 @@ func recoverPanics(log *slog.Logger, next http.Handler) http.Handler {
 	})
 }
 
-// logRequests logs each request's method, path, status, duration, and which
-// server answered it (see servedBy).
+// logRequests logs each request's method, path, status and duration.
 func logRequests(log *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		w.Header().Set(servedBy, "go") // the fallback proxy changes it to "ts"
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 		log.Info("request", "method", r.Method, "path", r.URL.Path, "status", rec.status,
-			"by", w.Header().Get(servedBy), "duration", time.Since(start).Round(time.Microsecond))
+			"duration", time.Since(start).Round(time.Microsecond))
 	})
 }
 
