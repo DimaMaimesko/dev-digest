@@ -81,7 +81,7 @@ This repo is the **course starter**: it does one flow end to end, and each lesso
 The backend was TypeScript (`server/`, Fastify, and `reviewer-core/`) until the
 Go rewrite; `git show ts-final:<path>` reads it. The API kept its routes and
 JSON, so the client talks to Go without knowing. `api/CLAUDE.md` has the Go
-code rules; `api/README.md` has every package and each deviation from TS.
+code rules; `api/docs/architecture.md` has every package, `api/docs/deviations-from-ts.md` each deviation from TS, and `api/specs/` what the API must do.
 
 ### Tech stack
 

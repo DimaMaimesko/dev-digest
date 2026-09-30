@@ -56,7 +56,7 @@ severity and score. All local; the only outbound calls are to GitHub (PR data)
 and the LLM (via OpenRouter).
 
 Each part has its own README:
-[`api`](api/README.md) (packages, routes, deviations from the TS server) ·
+[`api`](api/README.md) (run it; links to its specs and docs) ·
 [`client`](client/README.md) (UI route map) ·
 [`e2e`](e2e/README.md).
 
