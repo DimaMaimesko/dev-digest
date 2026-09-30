@@ -8,6 +8,10 @@ agent-browser is a CLI, not a test framework, so this package adds a thin
 convention: each flow is a JSON list of agent-browser commands, run in order
 against one shared browser session by `run.ts`.
 
+What each flow depends on (seed data, client copy) and how to add or debug a
+flow: [`docs/writing-flows.md`](docs/writing-flows.md). Lessons learned:
+[`INSIGHTS.md`](INSIGHTS.md).
+
 ## How a flow works
 
 A spec lives in `specs/NN-name.flow.json`:

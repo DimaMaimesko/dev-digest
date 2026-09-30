@@ -1,6 +1,6 @@
 # Client suite — Next.js web app (@devdigest/web).
 # Typecheck + component/unit tests (vitest + jsdom). Hermetic: no API, no DB,
-# no browser — fetch is mocked in the tests. The full-stack browser flow lives
+# no browser — the data hooks are mocked in the tests. The full-stack browser flow lives
 # in e2e-web.yml.
 name: client
 
