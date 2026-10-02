@@ -72,7 +72,7 @@ func newFixture(t *testing.T) fixture {
 	f.workspace = f.id(t, `INSERT INTO workspaces (name) VALUES ('default') RETURNING id`)
 	f.user = f.id(t, `INSERT INTO users (email, name) VALUES ('you@local', 'You') RETURNING id`)
 	skill := `INSERT INTO skills (workspace_id, name, description, type, source, body)
-		VALUES ($1, 's', 'd', 'custom', 'manual', 'b') RETURNING id`
+		VALUES ($1, gen_random_uuid()::text, 'd', 'custom', 'manual', 'b') RETURNING id`
 	f.skillA = f.id(t, skill, f.workspace)
 	f.skillB = f.id(t, skill, f.workspace)
 	f.otherWorkspaceSkill = f.id(t, skill, f.id(t, `INSERT INTO workspaces (name) VALUES ('other') RETURNING id`))

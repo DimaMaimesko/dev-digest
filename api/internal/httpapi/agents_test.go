@@ -115,7 +115,7 @@ func TestAgentSkills(t *testing.T) {
 	}
 	for i, id := range skills {
 		f.exec(t, `INSERT INTO skills (id, workspace_id, name, description, type, source, body)
-			VALUES ($1, $2, 'skill', 'd', 'custom', 'manual', 'body')`, id, f.workspace)
+			VALUES ($1, $2, gen_random_uuid()::text, 'd', 'custom', 'manual', 'body')`, id, f.workspace)
 		f.exec(t, `INSERT INTO agent_skills (agent_id, skill_id, "order") VALUES ($1, $2, $3)`, agent, id, i)
 	}
 

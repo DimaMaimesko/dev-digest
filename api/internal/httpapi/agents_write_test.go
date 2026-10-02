@@ -132,7 +132,7 @@ func TestChangeAgentSkills(t *testing.T) {
 	agent := f.insertAgent(t, f.workspace, "G", "NULL", "2026-09-01").String()
 	skill := func(workspace uuid.UUID) string {
 		return f.insertID(t, `INSERT INTO skills (workspace_id, name, description, type, source, body)
-			VALUES ($1, 's', 'd', 'custom', 'manual', 'b') RETURNING id`, workspace).String()
+			VALUES ($1, gen_random_uuid()::text, 'd', 'custom', 'manual', 'b') RETURNING id`, workspace).String()
 	}
 	a, b := skill(f.workspace), skill(f.workspace)
 	foreign := skill(f.insertID(t, `INSERT INTO workspaces (name) VALUES ('other') RETURNING id`))

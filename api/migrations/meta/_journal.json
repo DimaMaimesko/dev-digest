@@ -78,6 +78,13 @@
       "when": 1790810747377,
       "tag": "0010_run_cost",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1790946904064,
+      "tag": "0011_skills_crud",
+      "breakpoints": true
     }
   ]
 }
