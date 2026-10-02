@@ -26,3 +26,12 @@ FROM agent_skills l
 JOIN skills s ON s.id = l.skill_id
 WHERE l.agent_id = $1
 ORDER BY l."order", l.skill_id;
+
+-- name: ListAgentSkillBodies :many
+-- What a review's prompt gets from the agent's skills: the enabled ones with
+-- a body that isn't blank, in the agent's order.
+SELECT s.name, s.body
+FROM agent_skills l
+JOIN skills s ON s.id = l.skill_id
+WHERE l.agent_id = $1 AND s.enabled AND btrim(s.body, E' \t\n\r') <> ''
+ORDER BY l."order", l.skill_id;

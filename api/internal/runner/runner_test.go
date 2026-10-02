@@ -662,3 +662,53 @@ func TestRepoIntelContext(t *testing.T) {
 		})
 	}
 }
+
+// The agent's enabled skills go into the prompt in its order, each under its
+// name; disabled, blank and other agents' skills don't.
+func TestSkillsInThePrompt(t *testing.T) {
+	f := newFixture(t, &fakeLLM{answer: reviewJSON}, nil)
+	agent := f.agent(t, "General")
+	skill := func(name, body string, enabled bool) uuid.UUID {
+		var id uuid.UUID
+		f.scan(t, &id, `INSERT INTO skills (workspace_id, name, description, type, source, body, enabled)
+			VALUES ($1, $2, '', 'custom', 'manual', $3, $4) RETURNING id`, f.pull.WorkspaceID, name, body, enabled)
+		return id
+	}
+	link := func(skill uuid.UUID, order int) {
+		f.exec(t, `INSERT INTO agent_skills (agent_id, skill_id, "order") VALUES ($1, $2, $3)`, agent.ID, skill, order)
+	}
+	link(skill("rubric", "Check tests.", true), 1)
+	link(skill("secret-gate", "Detect sk_live keys.", true), 0)
+	link(skill("off", "Disabled.", false), 2)
+	link(skill("blank", " \n\t", true), 3)
+	skill("unlinked", "Not this agent's.", true)
+
+	id := f.start(t, agent)[0]
+	f.runner.Wait()
+
+	want := "## Skills / rules\n## secret-gate\nDetect sk_live keys.\n\n## rubric\nCheck tests.\n\n## Diff to review"
+	if user := f.llm.requests[0].Messages[0].Content; !strings.Contains(user, want) {
+		t.Errorf("the prompt lacks\n%s\nin:\n%s", want, user)
+	}
+	r := f.run(t, id)
+	assembly, _ := r.Trace["prompt_assembly"].(map[string]any)
+	if got := assembly["skills"]; got != "## secret-gate\nDetect sk_live keys.\n\n## rubric\nCheck tests." {
+		t.Errorf("trace skills = %q", got)
+	}
+	hasPrefixes(t, "trace log", r.traceLog(), "skills: 2 attached (secret-gate, rubric)")
+}
+
+func TestNoSkills(t *testing.T) {
+	f := newFixture(t, &fakeLLM{answer: reviewJSON}, nil)
+	id := f.start(t, f.agent(t, "General"))[0]
+	f.runner.Wait()
+
+	if user := f.llm.requests[0].Messages[0].Content; strings.Contains(user, "## Skills / rules") {
+		t.Errorf("a skills section without skills:\n%s", user)
+	}
+	r := f.run(t, id)
+	if assembly, _ := r.Trace["prompt_assembly"].(map[string]any); assembly["skills"] != nil {
+		t.Errorf("trace skills = %q, want null", assembly["skills"])
+	}
+	hasPrefixes(t, "trace log", r.traceLog(), "skills: none attached")
+}

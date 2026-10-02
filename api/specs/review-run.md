@@ -16,6 +16,10 @@ What must hold; the code is the reference for how.
   PR text (title, description, …) is untrusted: it is wrapped in an `<untrusted>` block, and
   any closing tag inside it is escaped in any letter case and spacing. The description is cut
   at 4000 characters, between characters, never inside one.
+- **Skills:** the agent's linked skills that are enabled and not blank, in the agent's order,
+  each as `## <name>` then its body, under `## Skills / rules`. Trusted (written in the app),
+  so not wrapped. The current body is used; the trace keeps the exact text sent. Loading them
+  failing fails the run. The log says `skills: N attached (names)` or `skills: none attached`.
 - **Repo-intel context**, when on globally (`REPO_INTEL_ENABLED`, default on) and for the agent
   (`repo_intel`): the repository map (1500 tokens), up to 10 callers of the symbols the change
   declares, and a note when changed files are among the most depended-on (95th rank percentile).

@@ -198,6 +198,9 @@ func (r *Runner) runOne(j job, pull postgres.PullRequest, repo postgres.Repo, d 
 	if pull.Body != nil {
 		prompt.PRDescription = *pull.Body
 	}
+	if prompt.Skills, err = r.skills(ctx, a.ID, log); err != nil {
+		return review.Usage{}, err
+	}
 	if !a.RepoIntel {
 		log.info("Repo intel disabled for this agent — skipping context enrichment")
 	} else if r.repoIntel {
