@@ -22,16 +22,19 @@ func TestListAgents(t *testing.T) {
 	second := f.insertAgent(t, f.workspace, "Security", "NULL", "2026-09-02")
 	first := f.insertAgent(t, f.workspace, "General", `'{"type": "object", "required": ["a"]}'`, "2026-09-01")
 	f.insertAgent(t, f.insertID(t, `INSERT INTO workspaces (name) VALUES ('other') RETURNING id`), "Hidden", "NULL", "2026-09-01")
+	skill := f.insertID(t, `INSERT INTO skills (workspace_id, name, description, type, source, body)
+		VALUES ($1, 'rubric', 'd', 'custom', 'manual', 'b') RETURNING id`, f.workspace)
+	f.exec(t, `INSERT INTO agent_skills (agent_id, skill_id, "order") VALUES ($1, $2, 0)`, first, skill)
 
 	assertJSON(t, f.get(t, "/agents"), http.StatusOK, `[
 		{"id": "`+first.String()+`", "name": "General", "description": "", "provider": "openrouter",
 		 "model": "deepseek/deepseek-v4-flash", "system_prompt": "You review code.",
 		 "output_schema": {"type": "object", "required": ["a"]},
-		 "enabled": true, "version": 3, "strategy": "auto", "ci_fail_on": "warning", "repo_intel": false},
+		 "enabled": true, "version": 3, "strategy": "auto", "ci_fail_on": "warning", "repo_intel": false, "skill_count": 1},
 		{"id": "`+second.String()+`", "name": "Security", "description": "", "provider": "openrouter",
 		 "model": "deepseek/deepseek-v4-flash", "system_prompt": "You review code.",
 		 "output_schema": null,
-		 "enabled": true, "version": 3, "strategy": "auto", "ci_fail_on": "warning", "repo_intel": false}
+		 "enabled": true, "version": 3, "strategy": "auto", "ci_fail_on": "warning", "repo_intel": false, "skill_count": 0}
 	]`)
 }
 

@@ -49,7 +49,8 @@ func (q *Queries) GetSkill(ctx context.Context, arg GetSkillParams) (GetSkillRow
 }
 
 const listSkillAgents = `-- name: ListSkillAgents :many
-SELECT a.id, a.workspace_id, a.name, a.description, a.provider, a.model, a.system_prompt, a.output_schema, a.enabled, a.version, a.created_by, a.created_at, a.strategy, a.ci_fail_on, a.repo_intel
+SELECT a.id, a.workspace_id, a.name, a.description, a.provider, a.model, a.system_prompt, a.output_schema, a.enabled, a.version, a.created_by, a.created_at, a.strategy, a.ci_fail_on, a.repo_intel,
+       (SELECT count(*) FROM agent_skills k WHERE k.agent_id = a.id) AS skill_count
 FROM agents a
 JOIN agent_skills l ON l.agent_id = a.id
 WHERE a.workspace_id = $1 AND l.skill_id = $2
@@ -61,32 +62,38 @@ type ListSkillAgentsParams struct {
 	SkillID     uuid.UUID
 }
 
-// The agents using a skill, oldest first.
-func (q *Queries) ListSkillAgents(ctx context.Context, arg ListSkillAgentsParams) ([]Agent, error) {
+type ListSkillAgentsRow struct {
+	Agent      Agent
+	SkillCount int64
+}
+
+// The agents using a skill, oldest first, each with the number of skills it links.
+func (q *Queries) ListSkillAgents(ctx context.Context, arg ListSkillAgentsParams) ([]ListSkillAgentsRow, error) {
 	rows, err := q.db.Query(ctx, listSkillAgents, arg.WorkspaceID, arg.SkillID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Agent
+	var items []ListSkillAgentsRow
 	for rows.Next() {
-		var i Agent
+		var i ListSkillAgentsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.Name,
-			&i.Description,
-			&i.Provider,
-			&i.Model,
-			&i.SystemPrompt,
-			&i.OutputSchema,
-			&i.Enabled,
-			&i.Version,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.Strategy,
-			&i.CiFailOn,
-			&i.RepoIntel,
+			&i.Agent.ID,
+			&i.Agent.WorkspaceID,
+			&i.Agent.Name,
+			&i.Agent.Description,
+			&i.Agent.Provider,
+			&i.Agent.Model,
+			&i.Agent.SystemPrompt,
+			&i.Agent.OutputSchema,
+			&i.Agent.Enabled,
+			&i.Agent.Version,
+			&i.Agent.CreatedBy,
+			&i.Agent.CreatedAt,
+			&i.Agent.Strategy,
+			&i.Agent.CiFailOn,
+			&i.Agent.RepoIntel,
+			&i.SkillCount,
 		); err != nil {
 			return nil, err
 		}

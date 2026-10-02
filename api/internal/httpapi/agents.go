@@ -29,9 +29,10 @@ type agentJSON struct {
 	Strategy     string          `json:"strategy"`
 	CIFailOn     string          `json:"ci_fail_on"`
 	RepoIntel    bool            `json:"repo_intel"`
+	SkillCount   int64           `json:"skill_count"` // how many skills it links
 }
 
-func toAgentJSON(a postgres.Agent) agentJSON {
+func toAgentJSON(a postgres.Agent, skillCount int64) agentJSON {
 	return agentJSON{
 		ID:           a.ID.String(),
 		Name:         a.Name,
@@ -45,6 +46,7 @@ func toAgentJSON(a postgres.Agent) agentJSON {
 		Strategy:     a.Strategy,
 		CIFailOn:     a.CiFailOn,
 		RepoIntel:    a.RepoIntel,
+		SkillCount:   skillCount,
 	}
 }
 
@@ -95,14 +97,14 @@ func toAgentVersionJSON(v postgres.AgentVersion) (agentVersionJSON, error) {
 
 // listAgents answers GET /agents: the workspace's agents, oldest first.
 func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
-	agents, err := s.queries.ListAgents(r.Context(), s.workspace)
+	rows, err := s.queries.ListAgents(r.Context(), s.workspace)
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	out := make([]agentJSON, 0, len(agents))
-	for _, a := range agents {
-		out = append(out, toAgentJSON(a))
+	out := make([]agentJSON, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toAgentJSON(row.Agent, row.SkillCount))
 	}
 	writeJSON(w, http.StatusOK, out)
 }
@@ -122,7 +124,17 @@ func (s *Server) getAgent(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toAgentJSON(a))
+	s.writeAgent(w, r, http.StatusOK, a)
+}
+
+// writeAgent answers with the agent and the number of skills it links.
+func (s *Server) writeAgent(w http.ResponseWriter, r *http.Request, status int, a postgres.Agent) {
+	n, err := s.queries.CountLinkedSkills(r.Context(), a.ID)
+	if err != nil {
+		s.internalError(w, r, err)
+		return
+	}
+	writeJSON(w, status, toAgentJSON(a, n))
 }
 
 // listAgentVersions answers GET /agents/{id}/versions: the agent's config
@@ -244,7 +256,7 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, toAgentJSON(a))
+	writeJSON(w, http.StatusCreated, toAgentJSON(a, 0)) // a new agent links no skills
 }
 
 // updateAgent answers PUT /agents/{id}: it changes the fields in the body.
@@ -285,7 +297,7 @@ func (s *Server) updateAgent(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, toAgentJSON(a))
+	s.writeAgent(w, r, http.StatusOK, a)
 }
 
 // deleteAgent answers DELETE /agents/{id}. The agent's versions and skill

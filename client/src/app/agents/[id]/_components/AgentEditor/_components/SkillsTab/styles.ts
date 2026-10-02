@@ -1,0 +1,58 @@
+import type { CSSProperties } from "react";
+
+/** Co-located styles for the agent's SkillsTab. */
+export const s = {
+  wrap: { maxWidth: 860 } satisfies CSSProperties,
+  header: { display: "flex", alignItems: "center", gap: 10 } satisfies CSSProperties,
+  h2: { fontSize: 16, fontWeight: 700 } satisfies CSSProperties,
+  search: {
+    marginLeft: "auto",
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: "7px 12px",
+    borderRadius: 7,
+    border: "1px solid var(--border)",
+    background: "var(--bg-surface)",
+    width: 240,
+  } satisfies CSSProperties,
+  searchIcon: { color: "var(--text-muted)" } satisfies CSSProperties,
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    color: "var(--text-primary)",
+  } satisfies CSSProperties,
+  hint: { fontSize: 13, color: "var(--text-secondary)", margin: "8px 0 16px" } satisfies CSSProperties,
+  list: { display: "flex", flexDirection: "column", gap: 8 } satisfies CSSProperties,
+  row: (linked: boolean, dragging: boolean, over: boolean): CSSProperties => ({
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "10px 14px",
+    borderRadius: 8,
+    border: "1px solid " + (over ? "var(--accent)" : "var(--border)"),
+    background: linked ? "var(--bg-elevated)" : "var(--bg-surface)",
+    opacity: dragging ? 0.4 : 1,
+  }),
+  grip: (enabled: boolean): CSSProperties => ({
+    color: enabled ? "var(--text-muted)" : "transparent",
+    cursor: enabled ? "grab" : "default",
+    display: "inline-flex",
+  }),
+  name: { fontSize: 14, fontWeight: 600, color: "var(--text-primary)", textDecoration: "none" } satisfies CSSProperties,
+  disabledNote: { fontSize: 12, color: "var(--text-muted)" } satisfies CSSProperties,
+  right: { marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 } satisfies CSSProperties,
+  arrow: (enabled: boolean): CSSProperties => ({
+    background: "none",
+    border: "none",
+    padding: 2,
+    display: "inline-flex",
+    color: enabled ? "var(--text-secondary)" : "var(--border-strong)",
+    cursor: enabled ? "pointer" : "default",
+  }),
+  divider: { height: 1, background: "var(--border)", margin: "6px 0" } satisfies CSSProperties,
+  noMatch: { fontSize: 13, color: "var(--text-muted)" } satisfies CSSProperties,
+} as const;

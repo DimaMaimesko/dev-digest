@@ -1,6 +1,11 @@
 -- name: ListAgents :many
 -- Oldest first, so the order is stable. (The TS server has no ORDER BY.)
-SELECT * FROM agents WHERE workspace_id = $1 ORDER BY created_at, id;
+-- Each with the number of skills it links.
+SELECT sqlc.embed(a),
+       (SELECT count(*) FROM agent_skills l WHERE l.agent_id = a.id) AS skill_count
+FROM agents a
+WHERE a.workspace_id = $1
+ORDER BY a.created_at, a.id;
 
 -- name: GetAgent :one
 SELECT * FROM agents WHERE workspace_id = $1 AND id = $2;

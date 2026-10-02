@@ -6,7 +6,7 @@ import { useTranslations } from "next-intl";
 import { Icon, Badge, Toggle } from "@devdigest/ui";
 import type { Skill } from "@devdigest/shared";
 import { useDeleteSkill } from "../../../../lib/hooks/skills";
-import { typeColor } from "./helpers";
+import { typeColor } from "../../../../lib/skill-type";
 import { s } from "./styles";
 
 export function SkillCard({

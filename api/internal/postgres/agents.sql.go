@@ -185,35 +185,46 @@ func (q *Queries) ListAgentVersions(ctx context.Context, agentID uuid.UUID) ([]A
 }
 
 const listAgents = `-- name: ListAgents :many
-SELECT id, workspace_id, name, description, provider, model, system_prompt, output_schema, enabled, version, created_by, created_at, strategy, ci_fail_on, repo_intel FROM agents WHERE workspace_id = $1 ORDER BY created_at, id
+SELECT a.id, a.workspace_id, a.name, a.description, a.provider, a.model, a.system_prompt, a.output_schema, a.enabled, a.version, a.created_by, a.created_at, a.strategy, a.ci_fail_on, a.repo_intel,
+       (SELECT count(*) FROM agent_skills l WHERE l.agent_id = a.id) AS skill_count
+FROM agents a
+WHERE a.workspace_id = $1
+ORDER BY a.created_at, a.id
 `
 
+type ListAgentsRow struct {
+	Agent      Agent
+	SkillCount int64
+}
+
 // Oldest first, so the order is stable. (The TS server has no ORDER BY.)
-func (q *Queries) ListAgents(ctx context.Context, workspaceID uuid.UUID) ([]Agent, error) {
+// Each with the number of skills it links.
+func (q *Queries) ListAgents(ctx context.Context, workspaceID uuid.UUID) ([]ListAgentsRow, error) {
 	rows, err := q.db.Query(ctx, listAgents, workspaceID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Agent
+	var items []ListAgentsRow
 	for rows.Next() {
-		var i Agent
+		var i ListAgentsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.WorkspaceID,
-			&i.Name,
-			&i.Description,
-			&i.Provider,
-			&i.Model,
-			&i.SystemPrompt,
-			&i.OutputSchema,
-			&i.Enabled,
-			&i.Version,
-			&i.CreatedBy,
-			&i.CreatedAt,
-			&i.Strategy,
-			&i.CiFailOn,
-			&i.RepoIntel,
+			&i.Agent.ID,
+			&i.Agent.WorkspaceID,
+			&i.Agent.Name,
+			&i.Agent.Description,
+			&i.Agent.Provider,
+			&i.Agent.Model,
+			&i.Agent.SystemPrompt,
+			&i.Agent.OutputSchema,
+			&i.Agent.Enabled,
+			&i.Agent.Version,
+			&i.Agent.CreatedBy,
+			&i.Agent.CreatedAt,
+			&i.Agent.Strategy,
+			&i.Agent.CiFailOn,
+			&i.Agent.RepoIntel,
+			&i.SkillCount,
 		); err != nil {
 			return nil, err
 		}

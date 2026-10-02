@@ -9,7 +9,7 @@ import { Badge, ErrorState, Icon, Skeleton } from "@devdigest/ui";
 import { ApiError } from "../../../lib/api";
 import { useSkill } from "../../../lib/hooks/skills";
 import { SkillsLab } from "../_components/SkillsLab";
-import { typeColor } from "../_components/SkillCard/helpers";
+import { typeColor } from "../../../lib/skill-type";
 import { SkillEditor } from "./_components/SkillEditor";
 import { TAB_KEYS } from "./_components/SkillEditor/constants";
 

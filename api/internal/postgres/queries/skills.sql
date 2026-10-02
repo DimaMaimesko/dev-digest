@@ -20,8 +20,9 @@ SELECT EXISTS (SELECT 1 FROM skills WHERE workspace_id = $1 AND id = $2);
 SELECT * FROM skill_versions WHERE skill_id = $1 ORDER BY version DESC;
 
 -- name: ListSkillAgents :many
--- The agents using a skill, oldest first.
-SELECT a.*
+-- The agents using a skill, oldest first, each with the number of skills it links.
+SELECT sqlc.embed(a),
+       (SELECT count(*) FROM agent_skills k WHERE k.agent_id = a.id) AS skill_count
 FROM agents a
 JOIN agent_skills l ON l.agent_id = a.id
 WHERE a.workspace_id = $1 AND l.skill_id = $2

@@ -66,12 +66,12 @@ status codes, side effects and the rules a change must keep.
 ### Agents
 | Route | Notes |
 |---|---|
-| `GET /agents`, `GET /agents/{id}` | |
+| `GET /agents`, `GET /agents/{id}` | Every agent answer (these, create, update, `GET /skills/{id}/agents`) has `skill_count`, the skills it links |
 | `POST /agents` | 201. Creates version 1 with its snapshot, in one transaction |
 | `PUT /agents/{id}` | A config change → a new version and snapshot (row locked, so concurrent updates each get one). Turning it on or off doesn't. Renaming, a new description, or sending any `output_schema` does (kept from TS) |
 | `DELETE /agents/{id}` | |
 | `GET /agents/{id}/versions`, `/versions/{version}` | Snapshots |
-| `GET /agents/{id}/skills`, `POST /agents/{id}/skills` | Replaces the skill list. An unknown or another workspace's skill → 422 |
+| `GET /agents/{id}/skills`, `POST /agents/{id}/skills` | `{skill_ids: [...]}` replaces the list in that order (`[]` unlinks all); `{skill_id, order?}` links one. An unknown or another workspace's skill → 422. Doesn't change the agent's version |
 | `GET /agents/{id}/models` | The models of the agent's provider |
 
 ### Skills

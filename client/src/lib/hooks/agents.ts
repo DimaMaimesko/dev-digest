@@ -3,7 +3,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api";
-import type { Agent, ModelInfo, Provider, ReviewStrategy } from "@devdigest/shared";
+import type { Agent, AgentSkillLink, ModelInfo, Provider, ReviewStrategy } from "@devdigest/shared";
 
 export function useAgents() {
   return useQuery({
@@ -87,5 +87,32 @@ export function useProviderModels(provider: Provider | null | undefined) {
     queryFn: () => api.get<ModelInfo[]>(`/providers/${provider}/models`),
     enabled: !!provider,
     staleTime: 5 * 60_000,
+  });
+}
+
+/** The skills an agent links, in the order its prompt uses them. */
+export function useAgentSkills(id: string | null | undefined) {
+  return useQuery({
+    queryKey: ["agent-skills", id],
+    queryFn: () => api.get<AgentSkillLink[]>(`/agents/${id}/skills`),
+    enabled: !!id,
+  });
+}
+
+/** Replaces an agent's linked skills with `skillIds`, in that order. */
+export function useSetAgentSkills() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, skillIds }: { id: string; skillIds: string[] }) =>
+      api.post<AgentSkillLink[]>(`/agents/${id}/skills`, { skill_ids: skillIds }),
+    onSuccess: (links, { id }) => {
+      qc.setQueryData(["agent-skills", id], links);
+      // Counts on both sides changed: the agent's skill_count, each skill's agent_count.
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["agent", id] });
+      qc.invalidateQueries({ queryKey: ["skills"] });
+      qc.invalidateQueries({ queryKey: ["skill"] });
+      qc.invalidateQueries({ queryKey: ["skill-agents"] });
+    },
   });
 }

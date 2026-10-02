@@ -54,6 +54,7 @@ func TestCreateAgent(t *testing.T) {
 		"name": "Perf", "description": "", "provider": "openrouter", "model": "deepseek/deepseek-v4-flash",
 		"system_prompt": "Find slow code.", "output_schema": map[string]any{"type": "object"},
 		"enabled": true, "version": 1.0, "strategy": "auto", "ci_fail_on": "critical", "repo_intel": true,
+		"skill_count": 0.0,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v\nwant %v", got, want)
@@ -110,6 +111,22 @@ func TestUpdateAgent(t *testing.T) {
 	decode(t, f.send(t, http.MethodPut, "/agents/"+a.ID, `{"enabled": false}`), http.StatusOK, &got)
 	if got.Enabled || got.Version != 2 {
 		t.Errorf("after turning it off: %+v, want version 2", got)
+	}
+
+	// The answer counts the agent's skills, as GET does.
+	skill := f.insertID(t, `INSERT INTO skills (workspace_id, name, description, type, source, body)
+		VALUES ($1, 'rubric', 'd', 'custom', 'manual', 'b') RETURNING id`, f.workspace)
+	f.send(t, http.MethodPost, "/agents/"+a.ID+"/skills", `{"skill_id": "`+skill.String()+`"}`).Body.Close()
+	var counted struct {
+		SkillCount int `json:"skill_count"`
+	}
+	decode(t, f.send(t, http.MethodPut, "/agents/"+a.ID, `{"enabled": true}`), http.StatusOK, &counted)
+	if counted.SkillCount != 1 {
+		t.Errorf("skill_count = %d after linking one, want 1", counted.SkillCount)
+	}
+	decode(t, f.get(t, "/agents/"+a.ID), http.StatusOK, &counted)
+	if counted.SkillCount != 1 {
+		t.Errorf("GET: skill_count = %d, want 1", counted.SkillCount)
 	}
 
 	if paths := issuePaths(t, f.send(t, http.MethodPut, "/agents/"+a.ID, `{"model": "", "ci_fail_on": "sometimes"}`)); strings.Join(paths, ",") != "model,ci_fail_on" {

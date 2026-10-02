@@ -12,7 +12,7 @@ Routes live in `src/app/**/page.tsx`. Every page is wrapped in `AppShell` (nav, 
 | `/skills` | Skill list; create, enable, delete a skill | — | `GET /skills`, `POST /skills`, `PUT /skills/:id`, `DELETE /skills/:id` |
 | `/skills/:id` | Skill editor: Config · Preview · Versions | `?tab=config\|preview\|versions` | `GET /skills/:id`, `/versions`, `/agents`; `PUT /skills/:id`; `POST /skills/:id/versions/:v/restore` |
 | `/agents` | Agent cards; create an agent | — | `GET /agents`, `POST /agents` |
-| `/agents/:id` | Agent editor (Config tab only in the starter) | `?tab=` | `GET /agents/:id`, `PUT /agents/:id`, `GET /providers/:p/models` |
+| `/agents/:id` | Agent editor: Config · Skills | `?tab=config\|skills` | `GET /agents/:id`, `PUT /agents/:id`, `GET /providers/:p/models`; `GET /skills`, `GET/POST /agents/:id/skills` |
 | `/settings/:section` | `api-keys` · `models` (feature models) | the section | `GET /settings/secrets-status`, `POST /settings/test-connection`, `GET/PUT /settings`, `GET /providers/:p/models` |
 
 `:number` is the PR number. The PR APIs take the PR's UUID, so the detail page finds it in the
@@ -27,7 +27,7 @@ flowchart TD
   PR -->|"?trace=runId"| TRACE["Run trace drawer<br/>trace · live log"]
 
   SKILLS["/skills"] --> SKILL["/skills/:id<br/>config · preview · versions"]
-  AGENTS["/agents"] --> AGENT["/agents/:id<br/>config"]
+  AGENTS["/agents"] --> AGENT["/agents/:id<br/>config · skills"]
   SETTINGS["/settings/:section<br/>api-keys · models"]
 
   PULLS -->|"GET /repos/:id/pulls"| API[("Go API :3001")]

@@ -243,14 +243,14 @@ func (s *Server) listSkillAgents(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	agents, err := s.queries.ListSkillAgents(r.Context(), postgres.ListSkillAgentsParams{WorkspaceID: s.workspace, SkillID: id})
+	rows, err := s.queries.ListSkillAgents(r.Context(), postgres.ListSkillAgentsParams{WorkspaceID: s.workspace, SkillID: id})
 	if err != nil {
 		s.internalError(w, r, err)
 		return
 	}
-	out := make([]agentJSON, 0, len(agents))
-	for _, a := range agents {
-		out = append(out, toAgentJSON(a))
+	out := make([]agentJSON, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toAgentJSON(row.Agent, row.SkillCount))
 	}
 	writeJSON(w, http.StatusOK, out)
 }

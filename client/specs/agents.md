@@ -11,10 +11,16 @@ An agent is a reviewer: a provider, a model and a system prompt.
 - Clicking a card opens `/agents/:id?tab=config`.
 
 ## Editor (`/agents/:id`)
-- The starter has one tab, **Config**: name, description, provider, model (from
-  `GET /providers/:p/models`), system prompt, enabled. Later lessons add Skills, Evals, Stats
-  and CI tabs; the tab stays in `?tab=` for that.
-- Saving a config change gives the agent a new version on the server.
+- Tabs in `?tab=` (an unknown one opens Config). Later lessons add Evals, Stats and CI.
+- **Config**: name, description, provider, model (from `GET /providers/:p/models`), system
+  prompt, enabled. Saving a config change gives the agent a new version on the server.
+- **Skills**: every workspace skill; ticked = linked, linked ones first in prompt order, with
+  "N of M attached". Tick links a skill last; drag (≡) or the arrows reorder. Each change saves
+  the whole ordered list at once (`POST /agents/:id/skills` with `skill_ids`); saves go one at
+  a time, and only the latest waiting change is sent. Reordering is off while filtering. A
+  skill disabled in the Skills Lab is marked "left out of prompts". Linking doesn't change the
+  agent's version.
+- Cards show how many skills the agent links (`skill_count`).
 
 ## Relied on by e2e
 Flow 03: the list shows the seeded "Security Reviewer" (the seed has General, Security and
