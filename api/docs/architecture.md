@@ -25,7 +25,7 @@ For the rules the code follows, see `../CLAUDE.md` and `go-idioms.md`.
 | `internal/jobs` | Runs slow work in the background, 3 at a time, 2 minutes each at most, and records each job in the `jobs` table | `server/src/platform/jobs.ts` |
 | `migrations` | The SQL migrations and Drizzle's journal, embedded in the binary | `server/src/db/migrations` (moved here) |
 | `internal/migrate` | Applies the migrations, recorded as Drizzle's migrator does | `server/src/db/migrate.ts`, drizzle-orm's `migrator` |
-| `internal/seed` | The starting data: workspace, user, settings, demo repository and review, built-in agents (their prompts embedded, copies of `docs/agent-prompts`) | `server/src/db/seed.ts`, `seed-prompts.ts` |
+| `internal/seed` | The starting data: workspace, user, settings, demo repository and review, built-in agents (their prompts embedded, copies of `docs/agent-prompts`), demo skills (bodies embedded; linked only to agents seeded in the same run) | `server/src/db/seed.ts`, `seed-prompts.ts` |
 | `cmd/db` | `db migrate` and `db seed` | the `db:migrate` and `db:seed` scripts |
 | `internal/pulls` | Saving pull requests from GitHub: the list, missing diff stats, one pull request with its files and commits | the sync code in `server/src/modules/pulls/routes.ts` and `polling/routes.ts` |
 | `internal/secrets` | API keys and tokens: `~/.devdigest/secrets.json` first, then the environment | `server/src/adapters/secrets/local.ts` |

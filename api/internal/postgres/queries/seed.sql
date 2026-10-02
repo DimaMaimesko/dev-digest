@@ -32,3 +32,6 @@ RETURNING id;
 
 -- name: AgentNamed :one
 SELECT EXISTS (SELECT 1 FROM agents WHERE workspace_id = $1 AND name = $2);
+
+-- name: SkillNamed :one
+SELECT EXISTS (SELECT 1 FROM skills WHERE workspace_id = $1 AND name = $2);

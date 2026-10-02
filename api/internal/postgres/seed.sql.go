@@ -187,3 +187,19 @@ func (q *Queries) SeedSetting(ctx context.Context, arg SeedSettingParams) error 
 	)
 	return err
 }
+
+const skillNamed = `-- name: SkillNamed :one
+SELECT EXISTS (SELECT 1 FROM skills WHERE workspace_id = $1 AND name = $2)
+`
+
+type SkillNamedParams struct {
+	WorkspaceID uuid.UUID
+	Name        string
+}
+
+func (q *Queries) SkillNamed(ctx context.Context, arg SkillNamedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, skillNamed, arg.WorkspaceID, arg.Name)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}

@@ -1,6 +1,7 @@
 // Package seed fills a new database with DevDigest's starting data: the
 // default workspace and its user, default settings, a demo repository with
-// a reviewed pull request, and the three built-in reviewer agents.
+// a reviewed pull request, the three built-in reviewer agents, and demo
+// skills.
 package seed
 
 import (
@@ -21,6 +22,11 @@ import (
 //
 //go:embed prompts/*.md
 var prompts embed.FS
+
+// The demo skills' bodies.
+//
+//go:embed skills/*.md
+var skillBodies embed.FS
 
 // prompt returns a built-in agent's prompt, without the file's last newline
 // (the TS seed's text has none).
@@ -82,7 +88,11 @@ func Run(ctx context.Context, db Beginner) (workspace, user uuid.UUID, err error
 		if err := demo(ctx, q, workspace, user); err != nil {
 			return err
 		}
-		return agents(ctx, q, workspace, user)
+		added, err := agents(ctx, q, workspace, user)
+		if err != nil {
+			return err
+		}
+		return skills(ctx, q, workspace, added)
 	})
 	return workspace, user, err
 }
@@ -215,8 +225,10 @@ func demoRun(ctx context.Context, q *postgres.Queries, workspace, pull uuid.UUID
 	return run, q.SaveTrace(ctx, postgres.SaveTraceParams{RunID: run, Trace: trace})
 }
 
-// agents adds the built-in reviewer agents the workspace hasn't got.
-func agents(ctx context.Context, q *postgres.Queries, workspace, user uuid.UUID) error {
+// agents adds the built-in reviewer agents the workspace hasn't got, and
+// returns the ones it added, by name.
+func agents(ctx context.Context, q *postgres.Queries, workspace, user uuid.UUID) (map[string]uuid.UUID, error) {
+	added := map[string]uuid.UUID{}
 	for _, a := range []struct{ name, description, prompt string }{
 		{"General Reviewer", "Reviews a PR diff for bugs, correctness, and clarity.", "general-reviewer"},
 		{"Security Reviewer", "Flags secrets, injection, SSRF and the lethal trifecta before merge.", "security-reviewer"},
@@ -224,18 +236,70 @@ func agents(ctx context.Context, q *postgres.Queries, workspace, user uuid.UUID)
 	} {
 		exists, err := q.AgentNamed(ctx, postgres.AgentNamedParams{WorkspaceID: workspace, Name: a.name})
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if exists {
 			continue
 		}
-		_, err = q.CreateAgent(ctx, postgres.CreateAgentParams{
+		created, err := q.CreateAgent(ctx, postgres.CreateAgentParams{
 			WorkspaceID: workspace, Name: a.name, Description: a.description,
 			Provider: agentProvider, Model: agentModel, SystemPrompt: prompt(a.prompt),
 			Strategy: "single-pass", CiFailOn: "critical", RepoIntel: true, Enabled: true, CreatedBy: &user,
 		})
 		if err != nil {
+			return nil, err
+		}
+		added[a.name] = created.ID
+	}
+	return added, nil
+}
+
+// skills adds the demo skills the workspace hasn't got, each at version 1
+// with its snapshot. A new skill is linked to its agent only when that agent
+// was added in this run too, so seeding an existing database never changes
+// what its agents' reviews send to the model.
+func skills(ctx context.Context, q *postgres.Queries, workspace uuid.UUID, addedAgents map[string]uuid.UUID) error {
+	for _, sk := range []struct {
+		name, description, typ, source string
+		enabled                        bool
+		agent                          string // the built-in agent it's linked to, if any
+	}{
+		{"pr-quality-rubric", "Rubric for evaluating overall PR quality across correctness, tests, and clarity.",
+			"rubric", "manual", true, "General Reviewer"},
+		{"secret-leakage-gate", "Detects sk_live, service_role, and NEXT_PUBLIC_ secrets before they ship.",
+			"security", "community", true, "Security Reviewer"},
+		{"no-then-chains", "House rule: always use async/await instead of .then() chains.",
+			"convention", "extracted", true, ""},
+		{"test-coverage-nudge", "Suggests tests when new branches lack coverage.",
+			"custom", "manual", false, ""},
+	} {
+		exists, err := q.SkillNamed(ctx, postgres.SkillNamedParams{WorkspaceID: workspace, Name: sk.name})
+		if err != nil {
 			return err
+		}
+		if exists {
+			continue
+		}
+		body, err := skillBodies.ReadFile("skills/" + sk.name + ".md")
+		if err != nil {
+			panic(err) // embedded above: can't happen
+		}
+		created, err := q.CreateSkill(ctx, postgres.CreateSkillParams{
+			WorkspaceID: workspace, Name: sk.name, Description: sk.description, Type: sk.typ,
+			Source: sk.source, Body: strings.TrimSuffix(string(body), "\n"), Enabled: sk.enabled,
+		})
+		if err != nil {
+			return err
+		}
+		if err := q.InsertSkillVersion(ctx, postgres.InsertSkillVersionParams{
+			SkillID: created.ID, Version: created.Version, Body: created.Body, Message: new("Initial version"),
+		}); err != nil {
+			return err
+		}
+		if agent, ok := addedAgents[sk.agent]; ok {
+			if err := q.LinkSkill(ctx, postgres.LinkSkillParams{AgentID: agent, SkillID: created.ID, Order: 0}); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

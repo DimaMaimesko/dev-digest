@@ -20,7 +20,8 @@ func counts(t *testing.T, db *pgxpool.Pool) map[string]int {
 	t.Helper()
 	out := map[string]int{}
 	for _, table := range []string{"workspaces", "users", "workspace_members", "settings", "repos", "pull_requests",
-		"pr_files", "pr_commits", "agent_runs", "run_traces", "reviews", "findings", "agents"} {
+		"pr_files", "pr_commits", "agent_runs", "run_traces", "reviews", "findings", "agents",
+		"skills", "skill_versions", "agent_skills"} {
 		var n int
 		if err := db.QueryRow(context.Background(), "SELECT count(*) FROM "+table).Scan(&n); err != nil {
 			t.Fatal(err)
@@ -32,7 +33,7 @@ func counts(t *testing.T, db *pgxpool.Pool) map[string]int {
 
 var seeded = map[string]int{"workspaces": 1, "users": 1, "workspace_members": 1, "settings": 4, "repos": 1,
 	"pull_requests": 1, "pr_files": 4, "pr_commits": 1, "agent_runs": 1, "run_traces": 1, "reviews": 1, "findings": 2,
-	"agents": 3}
+	"agents": 3, "skills": 4, "skill_versions": 4, "agent_skills": 2}
 
 func TestRun(t *testing.T) {
 	db := pgtest.New(t)
@@ -62,9 +63,28 @@ func TestRun(t *testing.T) {
 		t.Errorf("demo run: status %q, cost %v, trace cost %v, err %v", status, cost, traceCost, err)
 	}
 
-	// Again, after the user changed a setting: nothing added, nothing
-	// overwritten.
+	// The demo skills are linked to the agents seeded with them.
+	var links []string
+	rows, _ := db.Query(ctx, `SELECT a.name || ' → ' || s.name FROM agent_skills l
+		JOIN agents a ON a.id = l.agent_id JOIN skills s ON s.id = l.skill_id ORDER BY 1`)
+	for rows.Next() {
+		var l string
+		rows.Scan(&l)
+		links = append(links, l)
+	}
+	if got := strings.Join(links, ", "); got != "General Reviewer → pr-quality-rubric, Security Reviewer → secret-leakage-gate" {
+		t.Errorf("links: %s", got)
+	}
+	var body string
+	db.QueryRow(ctx, `SELECT body FROM skills WHERE name = 'pr-quality-rubric'`).Scan(&body)
+	if !strings.HasPrefix(body, "# PR Quality Rubric") || strings.HasSuffix(body, "\n") {
+		t.Errorf("rubric body %.30q…", body)
+	}
+
+	// Again, after the user changed a setting and a skill: nothing added,
+	// nothing overwritten.
 	db.Exec(ctx, `UPDATE settings SET value = '"light"' WHERE key = 'theme'`)
+	db.Exec(ctx, `UPDATE skills SET body = 'mine' WHERE name = 'pr-quality-rubric'`)
 	ws2, user2, err := seed.Run(ctx, db)
 	if err != nil || ws2 != ws || user2 != user {
 		t.Fatalf("second run: %v %v %v", ws2, user2, err)
@@ -77,6 +97,27 @@ func TestRun(t *testing.T) {
 	db.QueryRow(ctx, `SELECT value #>> '{}' FROM settings WHERE key = 'theme'`).Scan(&theme)
 	if theme != "light" {
 		t.Errorf("the user's theme was overwritten: %q", theme)
+	}
+	db.QueryRow(ctx, `SELECT body FROM skills WHERE name = 'pr-quality-rubric'`).Scan(&body)
+	if body != "mine" {
+		t.Errorf("the user's skill was overwritten: %.30q…", body)
+	}
+}
+
+// Seeding a database whose agents exist adds the skills without linking
+// them, so its agents' prompts don't change.
+func TestRunKeepsExistingAgentsSkills(t *testing.T) {
+	db := pgtest.New(t)
+	ctx := context.Background()
+	if _, _, err := seed.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(ctx, `DELETE FROM skills`)
+	if _, _, err := seed.Run(ctx, db); err != nil {
+		t.Fatal(err)
+	}
+	if c := counts(t, db); c["skills"] != 4 || c["agent_skills"] != 0 {
+		t.Errorf("skills %d, links %d; want 4 skills, no links", c["skills"], c["agent_skills"])
 	}
 }
 
