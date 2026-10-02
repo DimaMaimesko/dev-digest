@@ -14,6 +14,13 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
+## 2026-10-02 · context · Rows made in one transaction share `created_at`
+Symptom: "oldest first" lists (agents, skills) come back in a random but stable order after a seed; a test comparing order was flaky.
+Cause: `now()` is the transaction's start time, so the seed's rows tie on `created_at` and `ORDER BY created_at, id` falls back to the random UUID.
+Rule: in tests, give rows distinct `created_at` values before asserting order; don't expect seeded rows in insert order.
+Evidence: api/internal/seed/seed.go (one transaction); api/internal/httpapi/skills_test.go TestListSkills
+Promoted: no
+
 ## 2026-10-01 · decision · Long-lived requests end through `Server.CloseStreams`, not `BaseContext`
 Symptom: Ctrl-C with a live log open waited 10s, then `api: context deadline exceeded`, exit 1.
 Cause: `http.Server.Shutdown` never cancels request contexts. A `BaseContext` cancelled on shutdown was rejected: it would cut every in-flight request too.

@@ -14,6 +14,20 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
+## 2026-10-02 · mistake · `pnpm build` breaks a running `pnpm dev`
+Symptom: dev server 500s with `Cannot find module './vendor-chunks/recharts.js'`; restarting doesn't help.
+Cause: `next build` and `next dev` share `client/.next/`; the build leaves a `BUILD_ID` and prod chunks that dev keeps reusing.
+Rule: don't run `pnpm build` while `pnpm dev` runs (typecheck + tests instead). To recover: stop dev, `rm -rf client/.next`, start it again.
+Evidence: client/.next/BUILD_ID present means a prod build is in the dev folder
+Promoted: no
+
+## 2026-10-02 · pattern · Serialize saves that replace a whole list
+Symptom: two quick changes in the agent's Skills tab send two `POST /agents/:id/skills`.
+Cause: each request replaces the full ordered list; parallel requests can finish out of order, so an older list wins.
+Rule: for a replace-the-list mutation, keep one request in flight and queue only the latest list (see `SkillsTab` `send`/`save`).
+Evidence: client/src/app/agents/[id]/_components/AgentEditor/_components/SkillsTab/SkillsTab.tsx
+Promoted: no
+
 ## 2026-09-30 · mistake · Importing a value from `@devdigest/shared` breaks the build
 Symptom: `next build` / `pnpm dev` fails to resolve `./contracts/*.js`.
 Cause: `vendor/shared` is written for Node ESM (`.js` import suffixes). Types are erased, but a
