@@ -14,6 +14,11 @@ import { ToastProvider, notify } from "./toast";
 import { ApiError } from "./api";
 
 function errorMessage(e: unknown): string {
+  // A 422 names what's wrong in its details; the message alone is generic.
+  if (e instanceof ApiError && e.code === "validation_error" && Array.isArray(e.details)) {
+    const first = e.details[0] as { message?: unknown } | undefined;
+    if (typeof first?.message === "string") return first.message;
+  }
   if (e instanceof Error) return e.message;
   return "Something went wrong";
 }

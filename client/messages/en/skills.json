@@ -19,7 +19,14 @@
     "selectPrompt": {
       "title": "Select a skill",
       "body": "Pick a skill on the left to preview its body."
-    }
+    },
+    "createSkill": "Create from scratch",
+    "emptyManual": {
+      "title": "No skills yet",
+      "body": "A skill is a named rule or rubric that agents add to their review prompt. Create one, then attach it to an agent.",
+      "cta": "Create your first skill"
+    },
+    "noMatch": "No skills match your search."
   },
   "detail": {
     "crumbSkill": "Skill",
@@ -97,5 +104,73 @@
     "bodyLabel": "Skill body (Markdown)",
     "bodyHint": "Saving a changed body creates a new immutable version.",
     "version": "v{version}"
+  },
+  "card": {
+    "agentCount": "{count, plural, =0 {No agents} one {# agent} other {# agents}}",
+    "delete": "Delete skill",
+    "deleteConfirm": "Delete skill \"{name}\"? This cannot be undone.",
+    "deleteConfirmUsed": "Delete skill \"{name}\"? It will be removed from {count, plural, one {# agent} other {# agents}}. This cannot be undone.",
+    "disabled": "disabled"
+  },
+  "create": {
+    "title": "Create skill",
+    "subtitle": "A named rule, rubric or convention that agents add to their review prompt.",
+    "cancel": "Cancel",
+    "create": "Create skill",
+    "creating": "Creating…",
+    "defaultBody": "# Rule\n\nDescribe what the reviewer should check, and when to report it.",
+    "fields": {
+      "name": "Name",
+      "namePlaceholder": "pr-quality-rubric",
+      "description": "Description",
+      "descriptionPlaceholder": "What this skill checks",
+      "type": "Type",
+      "body": "Skill body (Markdown)"
+    }
+  },
+  "editor": {
+    "tabs": {
+      "config": "Config",
+      "preview": "Preview",
+      "versions": "Versions"
+    },
+    "runOnAgent": "Attach to an agent…"
+  },
+  "config": {
+    "title": "Configuration",
+    "enabled": "Enabled",
+    "enabledHint": "A disabled skill stays attached to its agents but is left out of every prompt.",
+    "name": "Name",
+    "description": "Description",
+    "type": "Type",
+    "source": "Source",
+    "body": "Skill body",
+    "bodyHint": "Saving a changed body creates a new version. Other fields change in place.",
+    "message": "Version note",
+    "messageHint": "Optional — what changed in the body. Shown in the version history.",
+    "messagePlaceholder": "Tightened scope rule",
+    "tokens": "~{count} tokens",
+    "unsaved": "unsaved",
+    "save": "Save skill",
+    "saving": "Saving…",
+    "savedToast": "Skill saved (v{version})",
+    "usedBy": "Used by",
+    "usedByNone": "Not attached to any agent yet."
+  },
+  "previewTab": {
+    "title": "Preview",
+    "subtitle": "Rendered as the reviewing agent receives it."
+  },
+  "versions": {
+    "title": "Version history",
+    "count": "{count, plural, one {# version} other {# versions}}",
+    "subtitle": "Every new body is saved as a version, so a review can be traced to the exact text it used.",
+    "current": "Current",
+    "restore": "Restore",
+    "restoring": "Restoring…",
+    "restoredToast": "Restored v{from} as v{version}",
+    "noMessage": "No note",
+    "show": "Show body",
+    "hide": "Hide body"
   }
 }

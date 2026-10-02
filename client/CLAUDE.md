@@ -30,8 +30,12 @@ Talks to the Go API at `NEXT_PUBLIC_API_BASE` (default `http://localhost:3001`).
 - Tests mock the hook modules (`vi.mock(".../lib/hooks/reviews")`), not `fetch`, and wrap in
   `NextIntlClientProvider` with the real messages file.
 
+## Change with care
+- `src/vendor/ui/`: our design system (nothing syncs it from upstream). Change it on purpose,
+  not as a one-screen hack: follow its README (one component per file, export from the barrel,
+  add new components to `/showcase`). The sidebar nav lives in its `nav.ts`.
+
 ## Do not touch
-- `src/vendor/ui/`: the vendored design system. Use it as it is.
 - `src/vendor/shared/`: import **types only**. A runtime value pulls `./contracts/*.js`
   into webpack and breaks the build (that's why `lib/feature-models.ts` mirrors a registry).
   A contract changes only together with the Go API (`../api/specs/http-api.md`).
@@ -47,7 +51,7 @@ Talks to the Go API at `NEXT_PUBLIC_API_BASE` (default `http://localhost:3001`).
   lessons; the API doesn't serve those routes yet. Don't delete them, and don't wire them in.
 
 ## Read when needed
-- Behavior of a screen → `specs/<screen>.md` (pr-list, pr-detail, agents, onboarding, settings)
+- Behavior of a screen → `specs/<screen>.md` (pr-list, pr-detail, agents, skills, onboarding, settings)
 - Data layer: errors, query keys, polling, SSE → `docs/data-layer.md`
 - Routes and the API calls behind each → `docs/route-map.md`
 - Design-system components and tokens → `src/vendor/ui/README.md`
