@@ -96,3 +96,25 @@ type RepoIndexState struct {
 	Stats          []byte
 	UpdatedAt      time.Time
 }
+
+type Skill struct {
+	ID            uuid.UUID
+	WorkspaceID   uuid.UUID
+	Name          string
+	Description   string
+	Type          string
+	Source        string
+	Body          string
+	Enabled       bool
+	Version       int32
+	EvidenceFiles []byte
+	CreatedAt     time.Time
+}
+
+type SkillVersion struct {
+	SkillID   uuid.UUID
+	Version   int32
+	Body      string
+	CreatedAt time.Time
+	Message   *string
+}

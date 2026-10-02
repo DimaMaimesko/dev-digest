@@ -128,8 +128,21 @@ export const Skill = z.object({
   enabled: z.boolean(),
   version: z.number().int(),
   evidence_files: z.array(z.string()).nullish(),
+  /** How many agents use the skill. */
+  agent_count: z.number().int(),
+  created_at: z.string(),
 });
 export type Skill = z.infer<typeof Skill>;
+
+/** One saved body of a skill. Every new body is a new version, newest first. */
+export const SkillVersion = z.object({
+  skill_id: z.string(),
+  version: z.number().int(),
+  body: z.string(),
+  message: z.string().nullable(),
+  created_at: z.string(),
+});
+export type SkillVersion = z.infer<typeof SkillVersion>;
 
 export const CommunitySkill = z.object({
   name: z.string(),

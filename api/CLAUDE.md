@@ -19,7 +19,7 @@ is fixed in Go with a test and listed in `docs/deviations-from-ts.md`.
 - `internal/review`: the domain: prompt, grounding, structured output, `Run`
 - `internal/runner`, `internal/jobs`: background reviews; background jobs
 - `internal/repointel`: the indexer and a review's context
-- `internal/repos`, `pulls`, `agents`, `secrets`, `seed`, `migrate`: one job each
+- `internal/repos`, `pulls`, `agents`, `skills`, `secrets`, `seed`, `migrate`: one job each
 - `internal/{openai,anthropic,github,git}`: adapters
 - `internal/postgres`: sqlc output · `migrations/`: embedded SQL
 - Every package, and what it was ported from → `docs/architecture.md`

@@ -22,7 +22,7 @@ status codes, side effects and the rules a change must keep.
   path, commits by time, findings by location.
 - Multi-statement writes are one transaction.
 
-## Routes (40)
+## Routes (48)
 
 ### Health and workspace
 | Route | Notes |
@@ -73,6 +73,19 @@ status codes, side effects and the rules a change must keep.
 | `GET /agents/{id}/versions`, `/versions/{version}` | Snapshots |
 | `GET /agents/{id}/skills`, `POST /agents/{id}/skills` | Replaces the skill list. An unknown or another workspace's skill → 422 |
 | `GET /agents/{id}/models` | The models of the agent's provider |
+
+### Skills
+| Route | Notes |
+|---|---|
+| `GET /skills`, `GET /skills/{id}` | Oldest first. Each has `agent_count`, the agents using it |
+| `POST /skills` | 201. Creates version 1 with its snapshot; an optional `message` describes it. `source` defaults to `manual` |
+| `PUT /skills/{id}` | Only a new `body` makes a new version and snapshot (row locked, as for agents), described by the optional `message`. Name, description, type and `enabled` change in place; `source` can't change |
+| `DELETE /skills/{id}` | Its versions and agent links go with it; the agents stay |
+| `GET /skills/{id}/versions` | Body snapshots, newest first |
+| `POST /skills/{id}/versions/{version}/restore` | That version's body becomes the next version, message `Restored vN`. The current body again changes nothing. Unknown version → 404 |
+| `GET /skills/{id}/agents` | The agents using it, oldest first, in the `Agent` shape |
+
+A skill name is unique in the workspace: a clash on create or rename is a 422 on `name`.
 
 ### Settings and providers
 | Route | Notes |

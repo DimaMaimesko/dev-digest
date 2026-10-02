@@ -25,6 +25,7 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/repos"
 	"github.com/DimaMaimesko/dev-digest/api/internal/runner"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
+	"github.com/DimaMaimesko/dev-digest/api/internal/skills"
 )
 
 // Server handles the API's requests.
@@ -38,6 +39,7 @@ type Server struct {
 	cloneDir  string
 	secrets   *secrets.Store
 	agents    *agents.Store
+	skills    *skills.Store
 	pulls     *pulls.Store
 	githubAPI string
 	modelAPIs ModelAPIs
@@ -86,6 +88,7 @@ func New(cfg Config) *Server {
 		cloneDir:  cfg.CloneDir,
 		secrets:   cfg.Secrets,
 		agents:    agents.NewStore(cfg.DB),
+		skills:    skills.NewStore(cfg.DB),
 		pulls:     pulls.NewStore(cfg.DB),
 		githubAPI: cfg.GitHubAPI,
 		modelAPIs: cfg.ModelAPIs,
@@ -124,6 +127,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /agents/{id}", s.deleteAgent)
 	mux.HandleFunc("POST /agents/{id}/skills", s.changeAgentSkills)
 	mux.HandleFunc("GET /agents/{id}/models", s.listAgentModels)
+	mux.HandleFunc("GET /skills", s.listSkills)
+	mux.HandleFunc("GET /skills/{id}", s.getSkill)
+	mux.HandleFunc("POST /skills", s.createSkill)
+	mux.HandleFunc("PUT /skills/{id}", s.updateSkill)
+	mux.HandleFunc("DELETE /skills/{id}", s.deleteSkill)
+	mux.HandleFunc("GET /skills/{id}/versions", s.listSkillVersions)
+	mux.HandleFunc("POST /skills/{id}/versions/{version}/restore", s.restoreSkillVersion)
+	mux.HandleFunc("GET /skills/{id}/agents", s.listSkillAgents)
 	mux.HandleFunc("GET /providers/{id}/models", s.listProviderModels)
 	mux.HandleFunc("GET /settings", s.getSettings)
 	mux.HandleFunc("PUT /settings", s.putSettings)
