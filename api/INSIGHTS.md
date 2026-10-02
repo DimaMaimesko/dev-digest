@@ -14,6 +14,13 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
+## 2026-10-01 · decision · Long-lived requests end through `Server.CloseStreams`, not `BaseContext`
+Symptom: Ctrl-C with a live log open waited 10s, then `api: context deadline exceeded`, exit 1.
+Cause: `http.Server.Shutdown` never cancels request contexts. A `BaseContext` cancelled on shutdown was rejected: it would cut every in-flight request too.
+Rule: a new streaming or long-poll handler must also stop on `s.streams` (`context.AfterFunc`, as `runEvents` does).
+Evidence: api/internal/httpapi/runs.go runEvents; api/internal/httpapi/runs_test.go TestShutdownEndsLiveLogs
+Promoted: no
+
 ## 2026-10-01 · mistake · sqlc makes a computed column non-null
 Symptom: `sum(x)`, `x::float8`, `CAST`, `NULLIF`, a scalar subquery: all generate `float64`, never `*float64`.
 Cause: sqlc infers nullability only for table columns (and LEFT JOINed ones); any expression is non-null.

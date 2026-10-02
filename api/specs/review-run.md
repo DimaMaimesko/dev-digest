@@ -63,7 +63,9 @@ What must hold; the code is the reference for how.
 - `GET /runs/{id}/events` streams events `{runId, seq, kind, msg, t}` as SSE, earlier ones
   first. Kinds: `info`, `tool` (a call to git or a model), `result`, `error`.
 - The log lives in memory; a finished run's stays 10 minutes, then only the trace has it.
-  An unknown run's stream ends at once.
+  An unknown run's stream ends at once. Every open stream ends as shutdown starts
+  (`Server.CloseStreams`, registered with `RegisterOnShutdown`): `Shutdown` waits for every
+  request, and a stream would otherwise last until its run ends.
 - Cancel stops the model call at once through `ctx`. Only the workspace's own runs can be cancelled.
 - When the server stops, its running runs are marked failed ("the server stopped during the
   run"). At start, runs left "running" by a crashed server are marked failed too.

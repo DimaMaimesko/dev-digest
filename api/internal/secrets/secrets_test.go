@@ -11,6 +11,25 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
 
+func TestProviderKey(t *testing.T) {
+	tests := []struct {
+		provider, want string
+		ok             bool
+	}{
+		{"openai", secrets.OpenAIKey, true},
+		{"anthropic", secrets.AnthropicKey, true},
+		{"openrouter", secrets.OpenRouterKey, true},
+		{"github", "", false}, // not a model provider
+		{"OpenAI", "", false},
+		{"", "", false},
+	}
+	for _, tt := range tests {
+		if got, ok := secrets.ProviderKey(tt.provider); got != tt.want || ok != tt.ok {
+			t.Errorf("ProviderKey(%q) = %q, %v; want %q, %v", tt.provider, got, ok, tt.want, tt.ok)
+		}
+	}
+}
+
 func TestGet(t *testing.T) {
 	tests := []struct {
 		name string

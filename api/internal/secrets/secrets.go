@@ -22,6 +22,21 @@ const (
 	GitHubToken   = "GITHUB_TOKEN"
 )
 
+// ProviderKey returns the name of the API key a model provider (openai,
+// anthropic or openrouter) is called with. ok is false for any other
+// provider.
+func ProviderKey(provider string) (name string, ok bool) {
+	switch provider {
+	case "openai":
+		return OpenAIKey, true
+	case "anthropic":
+		return AnthropicKey, true
+	case "openrouter":
+		return OpenRouterKey, true
+	}
+	return "", false
+}
+
 // Store reads secrets from a file, then from the environment, and saves
 // them to the file.
 type Store struct {

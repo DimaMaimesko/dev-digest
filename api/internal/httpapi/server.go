@@ -5,8 +5,10 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime"
@@ -41,6 +43,9 @@ type Server struct {
 	modelAPIs ModelAPIs
 	runner    *runner.Runner
 	repos     *repos.Store
+
+	streams      context.Context // ends when the event streams must close
+	closeStreams context.CancelFunc
 }
 
 // Config is what a Server needs.
@@ -70,6 +75,7 @@ type Config struct {
 
 // New returns a Server.
 func New(cfg Config) *Server {
+	streams, closeStreams := context.WithCancel(context.Background())
 	return &Server{
 		db:        cfg.DB,
 		queries:   postgres.New(cfg.DB),
@@ -85,8 +91,16 @@ func New(cfg Config) *Server {
 		modelAPIs: cfg.ModelAPIs,
 		runner:    cfg.Runner,
 		repos:     cfg.Repos,
+
+		streams:      streams,
+		closeStreams: closeStreams,
 	}
 }
+
+// CloseStreams ends the open event streams, and any opened later. Register
+// it with http.Server.RegisterOnShutdown: Shutdown waits for every request to
+// finish, and a run's live log otherwise finishes only with the run.
+func (s *Server) CloseStreams() { s.closeStreams() }
 
 // Handler returns the API's routes, wrapped in the middleware every request
 // goes through.
@@ -142,10 +156,17 @@ func (s *Server) Handler() http.Handler {
 }
 
 // writeJSON sends v as the JSON body of a response with the given status.
+// It encodes v before sending anything: a value that can't be encoded, such
+// as a NaN, is a bug, and its panic becomes a 500 in recoverPanics rather
+// than a cut-off body behind the status already sent.
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Errorf("encode the response: %w", err))
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v) // the status is sent; a write error can't be reported
+	w.Write(append(body, '\n')) // the status is sent; a write error can't be reported
 }
 
 // errorBody is the TS server's error envelope:

@@ -203,13 +203,6 @@ type connTestJSON struct {
 	Message  string `json:"message"`
 }
 
-// secretNames are the secrets a connection test saves and tests, by
-// provider.
-var secretNames = map[string]string{
-	"openai": secrets.OpenAIKey, "anthropic": secrets.AnthropicKey,
-	"openrouter": secrets.OpenRouterKey, "github": secrets.GitHubToken,
-}
-
 // testConnection answers POST /settings/test-connection with {"provider":
 // "openai", "key": "…"}: it saves the key, when there is one, then checks
 // the saved key with a cheap call. A failed test is a 200 with "ok": false.
@@ -235,7 +228,12 @@ func (s *Server) testConnection(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) connectionTest(ctx context.Context, provider string, key *string) (string, error) {
-	name := secretNames[provider]
+	// The secret the test saves and checks: a model provider's API key, or
+	// the GitHub token, the only other provider testConnection lets through.
+	name, ok := secrets.ProviderKey(provider)
+	if !ok {
+		name = secrets.GitHubToken
+	}
 	if key != nil {
 		if err := s.secrets.Set(name, *key); err != nil {
 			return "", err

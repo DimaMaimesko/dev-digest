@@ -73,7 +73,13 @@ func (f fixture) get(t *testing.T, path string) *http.Response {
 
 func (f fixture) serve(req *http.Request) *http.Response {
 	rec := httptest.NewRecorder()
-	httpapi.New(httpapi.Config{
+	f.api().Handler().ServeHTTP(rec, req)
+	return rec.Result()
+}
+
+// api returns a Server on the fixture's database, secrets and runner.
+func (f fixture) api() *httpapi.Server {
+	return httpapi.New(httpapi.Config{
 		DB:        f.db,
 		Workspace: f.workspace,
 		User:      f.user,
@@ -85,8 +91,7 @@ func (f fixture) serve(req *http.Request) *http.Response {
 		ModelAPIs: f.modelAPIs,
 		Runner:    f.runner,
 		Repos:     f.repos,
-	}).Handler().ServeHTTP(rec, req)
-	return rec.Result()
+	})
 }
 
 // assertJSON checks a response's status and that its body is the JSON want.

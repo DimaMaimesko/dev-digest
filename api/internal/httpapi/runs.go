@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -94,7 +95,8 @@ func (s *Server) startReview(w http.ResponseWriter, r *http.Request) {
 
 // runEvents answers GET /runs/{id}/events: a stream of server-sent events
 // with the run's live log, the earlier events first. It ends when the run
-// does, or at once for a run this server doesn't know.
+// does, when the server shuts down (CloseStreams), or at once for a run this
+// server doesn't know.
 func (s *Server) runEvents(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathID(w, r)
 	if !ok {
@@ -109,7 +111,12 @@ func (s *Server) runEvents(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "retry: 3000\n\n") // how long a browser waits to reconnect, as in TS
 	rc.Flush()
 
-	s.runner.Follow(r.Context(), id, func(e runner.Event) error {
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	stop := context.AfterFunc(s.streams, cancel)
+	defer stop()
+
+	s.runner.Follow(ctx, id, func(e runner.Event) error {
 		data, err := json.Marshal(e)
 		if err != nil {
 			return err

@@ -114,28 +114,29 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		log.Info("marked runs left running by a stopped server as failed", "runs", n)
 	}
 
-	srv := &http.Server{
-		Handler: httpapi.New(httpapi.Config{
-			DB:        pool,
-			Workspace: workspace,
-			User:      user,
-			WebOrigin: cfg.webOrigin,
-			CloneDir:  cfg.cloneDir,
-			Secrets:   store,
-			Log:       log,
-			GitHubAPI: github.DefaultURL,
-			ModelAPIs: modelAPIs,
-			Runner:    reviews,
-			Repos: repos.NewStore(repos.Config{
-				DB:       pool,
-				Jobs:     background,
-				CloneDir: cfg.cloneDir,
-				Token:    githubToken,
-				Indexer:  repointel.NewIndexer(pool, githubToken),
-			}),
-		}).Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
+	api := httpapi.New(httpapi.Config{
+		DB:        pool,
+		Workspace: workspace,
+		User:      user,
+		WebOrigin: cfg.webOrigin,
+		CloneDir:  cfg.cloneDir,
+		Secrets:   store,
+		Log:       log,
+		GitHubAPI: github.DefaultURL,
+		ModelAPIs: modelAPIs,
+		Runner:    reviews,
+		Repos: repos.NewStore(repos.Config{
+			DB:       pool,
+			Jobs:     background,
+			CloneDir: cfg.cloneDir,
+			Token:    githubToken,
+			Indexer:  repointel.NewIndexer(pool, githubToken),
+		}),
+	})
+	srv := &http.Server{Handler: api.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	// Shutdown waits for every request, and a run's live log would otherwise
+	// last until the run ends.
+	srv.RegisterOnShutdown(api.CloseStreams)
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(ln) }()
 	log.Info("DevDigest API listening", "url", fmt.Sprintf("http://localhost:%d", cfg.port))
@@ -155,9 +156,8 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 // read from the secrets store at each run, so a key saved in the web app
 // takes effect at once.
 func reviewModel(store *secrets.Store, apis httpapi.ModelAPIs) runner.LLMFor {
-	keys := map[string]string{"openai": secrets.OpenAIKey, "openrouter": secrets.OpenRouterKey, "anthropic": secrets.AnthropicKey}
 	return func(provider string) (review.LLM, error) {
-		name, ok := keys[provider]
+		name, ok := secrets.ProviderKey(provider)
 		if !ok {
 			return nil, fmt.Errorf("unknown provider %q", provider)
 		}

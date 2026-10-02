@@ -1,6 +1,7 @@
 package httpapi_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -192,6 +194,43 @@ func TestRunEvents(t *testing.T) {
 	}
 	if paths := issuePaths(t, f.get(t, "/runs/42/events")); len(paths) != 1 {
 		t.Errorf("issues at %v", paths)
+	}
+}
+
+// Shutdown waits for every request. A live log lasts as long as its run, so
+// without CloseStreams it would hold Shutdown up until its deadline.
+func TestShutdownEndsLiveLogs(t *testing.T) {
+	f, pull := withRunner(t, fakeModel{gate: make(chan struct{})}) // the run never ends on its own
+	agent := f.insertAgent(t, f.workspace, "G", "NULL", "2026-09-01")
+	var got struct {
+		Runs []struct {
+			RunID string `json:"run_id"`
+		}
+	}
+	decode(t, f.send(t, http.MethodPost, "/pulls/"+pull.String()+"/review", `{"agentId": "`+agent.String()+`"}`), http.StatusOK, &got)
+
+	api := f.api()
+	srv := httptest.NewServer(api.Handler())
+	defer srv.Close()
+	srv.Config.RegisterOnShutdown(api.CloseStreams)
+
+	res, err := http.Get(srv.URL + "/runs/" + got.Runs[0].RunID + "/events")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	stream := bufio.NewReader(res.Body)
+	if line, err := stream.ReadString('\n'); line != "retry: 3000\n" {
+		t.Fatalf("stream starts with %q, %v", line, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := srv.Config.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v; the open live log held it up", err)
+	}
+	if _, err := io.ReadAll(stream); err != nil {
+		t.Errorf("the stream didn't end cleanly: %v", err)
 	}
 }
 
