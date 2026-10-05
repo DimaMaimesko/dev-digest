@@ -29,6 +29,8 @@ For the rules the code follows, see `../CLAUDE.md` and `go-idioms.md`.
 | `cmd/db` | `db migrate` and `db seed` | the `db:migrate` and `db:seed` scripts |
 | `internal/pulls` | Saving pull requests from GitHub: the list, missing diff stats, one pull request with its files and commits | the sync code in `server/src/modules/pulls/routes.ts` and `polling/routes.ts` |
 | `internal/secrets` | API keys and tokens: `~/.devdigest/secrets.json` first, then the environment | `server/src/adapters/secrets/local.ts` |
+| `cmd/mcp` | `devdigest-mcp`, an MCP server over stdio for coding agents (`.mcp.json` at the repo root) | — |
+| `internal/mcpserver` | The MCP server's tools: list agents, run one on a PR, findings, conventions, a blast radius stub. A client of the HTTP API only, never the database (`specs/mcp.md`) | New in Go (lesson L04) |
 | `internal/pgtest` | A throwaway, migrated Postgres for tests: one container per test binary, one database per test | `server/test/helpers/pg.ts` |
 
 **Where the retry loop lives.** In the TS code, each of the three LLM providers
@@ -44,5 +46,6 @@ imports `review` for the types of the `LLM` interface; `review` imports only
 library. The API adds `pgx` (the Postgres driver), `google/uuid`, Anthropic's
 official SDK, tree-sitter with its TypeScript and JavaScript grammars
 (`go-tree-sitter`, which uses cgo: building needs a C compiler, such as
-Xcode's), `tiktoken-go/tokenizer` for token counts, and, for tests only,
+Xcode's), `tiktoken-go/tokenizer` for token counts, the official MCP SDK
+(`modelcontextprotocol/go-sdk`) for `cmd/mcp`, and, for tests only,
 `testcontainers-go`.

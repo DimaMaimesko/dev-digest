@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "devdigest": {
+      "type": "stdio",
+      "command": "go",
+      "args": ["-C", "api", "run", "./cmd/mcp"]
+    }
+  }
+}

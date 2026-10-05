@@ -10,16 +10,17 @@ is fixed in Go with a test and listed in `docs/deviations-from-ts.md`.
 ## Commands (from api/)
 - `make check`: gofmt, vet, staticcheck, `go test -race`. Before every commit. DB tests need Docker.
 - `make generate`: after editing `internal/postgres/queries/*.sql` or adding a migration
-- `make build`: `bin/api`, `bin/db`, `bin/review`
+- `make build`: `bin/api`, `bin/db`, `bin/mcp`, `bin/review`
 - `go run ./cmd/db migrate` / `seed`: uses `DATABASE_URL`
 
 ## Map
-- `cmd/{api,db,review}`: wiring only; every dependency is built here
+- `cmd/{api,db,mcp,review}`: wiring only; every dependency is built here
 - `internal/httpapi`: routes, JSON, error envelope, middleware
 - `internal/review`: the domain: prompt, grounding, structured output, `Run`
 - `internal/runner`, `internal/jobs`: background reviews; background jobs
 - `internal/repointel`: the indexer and a review's context
 - `internal/repos`, `pulls`, `agents`, `skills`, `secrets`, `seed`, `migrate`: one job each
+- `internal/mcpserver`: the MCP server's tools, a client of the HTTP API
 - `internal/{openai,anthropic,github,git}`: adapters
 - `internal/postgres`: sqlc output · `migrations/`: embedded SQL
 - Every package, and what it was ported from → `docs/architecture.md`
@@ -49,6 +50,7 @@ is fixed in Go with a test and listed in `docs/deviations-from-ts.md`.
 - Indexer, repo map, callers → `specs/repo-intel.md`
 - Adding, cloning, refreshing repos; background jobs → `specs/repos-jobs.md`
 - API keys, secrets file, test-connection → `specs/secrets.md`
+- The MCP server, its tools and token budget → `specs/mcp.md`
 - "Why does Go differ from TS here?" → `docs/deviations-from-ts.md`
 - How the port was done and verified → `docs/history.md`
 - A strange DB, cgo, staticcheck or runner failure → `INSIGHTS.md` first

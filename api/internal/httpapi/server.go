@@ -142,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /settings/secrets-status", s.secretsStatus)
 	mux.HandleFunc("GET /workspace", s.getWorkspace)
 	mux.HandleFunc("GET /repos/{id}/index-state", s.getIndexState)
+	mux.HandleFunc("GET /repos/{id}/conventions", s.listConventions)
 	mux.HandleFunc("GET /pulls/{id}/reviews", s.listReviews)
 	mux.HandleFunc("GET /pulls/{id}/runs", s.listRuns)
 	mux.HandleFunc("GET /pulls/{id}/runs/active", s.listActiveRuns)

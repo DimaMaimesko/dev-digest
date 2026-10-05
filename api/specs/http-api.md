@@ -22,7 +22,7 @@ status codes, side effects and the rules a change must keep.
   path, commits by time, findings by location.
 - Multi-statement writes are one transaction.
 
-## Routes (48)
+## Routes (49)
 
 ### Health and workspace
 | Route | Notes |
@@ -39,6 +39,7 @@ status codes, side effects and the rules a change must keep.
 | `POST /repos/{id}/refresh` | Fetches into the clone in the background |
 | `POST /repos/{id}/resync` | 202 with the job. Moves the clone to the default branch's latest commit, then indexes |
 | `DELETE /repos/{id}` | Removes the repo with its PRs and reviews. The clone stays on disk |
+| `GET /repos/{id}/conventions` | `ConventionCandidate[]`: accepted first, then by confidence (unknown last), then by rule. No nulls: missing evidence is `""`, missing confidence `0`. Unknown repo → 404. Read by the MCP server (`mcp.md`); nothing writes the table yet |
 | `GET /repos/{id}/index-state` | The index state (the **Indexed** badge, not rendered by the starter UI yet). Unknown repo → the "no data" state, not 404 |
 | `GET /repos/{id}/pulls` | With a GitHub token, syncs the 50 most recently updated PRs first; without one, or when GitHub fails, serves the saved ones. Each has `score` (latest review) and `cost_usd` (all its runs; null when none is known) |
 | `POST /repos/{id}/poll` | Like the list sync, but fails: 502 `github_error`, 500 `config_error` without a token. The web app doesn't call it |

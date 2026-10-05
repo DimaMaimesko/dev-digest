@@ -35,6 +35,17 @@ type AgentVersion struct {
 	CreatedAt  time.Time
 }
 
+type Convention struct {
+	ID              uuid.UUID
+	WorkspaceID     uuid.UUID
+	RepoID          *uuid.UUID
+	Rule            string
+	EvidencePath    *string
+	EvidenceSnippet *string
+	Confidence      *float64
+	Accepted        bool
+}
+
 type Finding struct {
 	ID                 uuid.UUID
 	ReviewID           uuid.UUID

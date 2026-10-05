@@ -384,10 +384,11 @@ func hasDuplicates(ids []uuid.UUID) bool {
 	return false
 }
 
-// deref returns *p, or "" for nil.
-func deref(p *string) string {
+// deref returns *p, or the zero value ("", 0, …) for nil.
+func deref[T any](p *T) T {
 	if p == nil {
-		return ""
+		var zero T
+		return zero
 	}
 	return *p
 }

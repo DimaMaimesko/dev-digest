@@ -14,6 +14,13 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
+## 2026-10-05 · pattern · Smoke-testing `cmd/mcp` by hand over stdio
+Symptom: piping an `initialize` message into `go -C api run ./cmd/mcp` prints nothing.
+Cause: stdin closes at once, so the stdio transport ends before the server answers.
+Rule: keep stdin open: `{ printf '%s\n' '<json-rpc>' …; sleep 6; } | ./mcp`; send `notifications/initialized` before `tools/call`.
+Evidence: api/cmd/mcp/main.go; api/specs/mcp.md "Using it"
+Promoted: no
+
 ## 2026-10-02 · context · Rows made in one transaction share `created_at`
 Symptom: "oldest first" lists (agents, skills) come back in a random but stable order after a seed; a test comparing order was flaky.
 Cause: `now()` is the transaction's start time, so the seed's rows tie on `created_at` and `ORDER BY created_at, id` falls back to the random UUID.
