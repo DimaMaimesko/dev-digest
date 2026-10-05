@@ -41,4 +41,5 @@ Go 1.26 (cgo for tree-sitter) · Postgres 16 + pgvector · Next.js 15, React 19 
 ## Read when needed
 - End-to-end behavior of the product → `specs/review-flow.md`
 - Architecture overview → `README.md`; testing strategy → `TESTING.md`
+- Building a feature spec-first (agents, `specs/`, `plans/`, `/run-plan`) → `.claude/agents/README.md`
 - Something broke in the environment (Docker, ports, toolchain, CI) → `INSIGHTS.md`

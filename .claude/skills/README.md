@@ -6,8 +6,9 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 
 | Skill | Scope | Description |
 |-------|-------|-------------|
-| [fastify-best-practices](fastify-best-practices/SKILL.md) | Backend | Fastify routes, plugins, JSON-schema validation, error handling |
-| [drizzle-orm-patterns](drizzle-orm-patterns/SKILL.md) | Backend | Drizzle schema, queries, relations, transactions, migrations |
+| [fastify-best-practices](fastify-best-practices/SKILL.md) | Legacy | Fastify routes, plugins — the TypeScript backend is gone; not used |
+| [drizzle-orm-patterns](drizzle-orm-patterns/SKILL.md) | Legacy | Drizzle ORM — the API uses pgx + sqlc now; not used |
+| [go-api-skeleton](go-api-skeleton/SKILL.md) | Backend | New Go APIs in the greenlight layout — not this repo's layout; don't use for `api/` |
 | [postgresql-table-design](postgresql-table-design/SKILL.md) | Backend | Postgres schema design, data types, indexing, constraints |
 | [next-best-practices](next-best-practices/SKILL.md) | Frontend | Next.js App Router, RSC boundaries, data fetching, optimization |
 | [react-best-practices](react-best-practices/SKILL.md) | Frontend | React anti-patterns, state management, hooks rules |
@@ -18,6 +19,24 @@ Reusable AI skills that provide specialized knowledge and workflows. Canonical l
 | [mermaid-diagram](mermaid-diagram/SKILL.md) | Shared | Mermaid diagrams in markdown (flowcharts, sequence, ERD, …) |
 | [onboard](onboard/SKILL.md) | Project | New-team-member onboarding: goal, stack, architecture, module connections, diagrams |
 | [engineering-insights](engineering-insights/SKILL.md) | Project | End-of-task capture of non-obvious lessons into each part's `INSIGHTS.md`; format checker |
+| [run-plan](run-plan/SKILL.md) | Project | Runs an approved `plans/<slug>.md`: implementers by task DAG, review gate, bounded fix loop |
+
+## Routing by path
+
+Which skills to load before touching a file. `implementation-planner` copies this into each plan
+task's "Skills to use"; `implementer` and `test-writer` fall back to it for anything a plan misses.
+
+| Path | Skills | Notes |
+|---|---|---|
+| `api/**/*.go` | none | No Go skill fits: the conventions are `api/CLAUDE.md` and `api/docs/go-idioms.md` |
+| `api/migrations/*.sql`, `api/internal/postgres/queries/*.sql` | `postgresql-table-design` | Then `make generate`; never hand-edit `internal/postgres/*.go` |
+| `api/internal/httpapi/**`, `api/internal/secrets/**`, anything reading PR text into a prompt | `security` | Input validation, secrets, untrusted text |
+| `client/src/app/**` (pages, layouts, route handlers) | `next-best-practices`, `react-best-practices` | |
+| `client/src/**/*.tsx` components, `client/src/lib/hooks/**` | `react-best-practices` (+ `typescript-expert` for tricky types) | |
+| `client/src/**/*.test.tsx` | `react-testing-library` | |
+| `client/src/vendor/shared/contracts/**` | `zod` | Must still parse the API's JSON |
+| `e2e/**` | none | `e2e/docs/writing-flows.md` |
+| Diagrams in any Markdown | `mermaid-diagram` | |
 
 ## What Are Skills?
 

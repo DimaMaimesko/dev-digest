@@ -15,6 +15,20 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
+## 2026-10-06 · mistake · Imported Claude agents still describe the TypeScript repo
+Symptom: the SDD agents pointed at `server/`, `LEARNINGS.md`, `pnpm`/`vitest` for the API, and agents and skills that don't exist (`architecture-reviewer`, `pr-self-review`).
+Cause: they were copied from the pre-Go version of the project; nothing loads or validates `.claude/agents/*.md` against this repo.
+Rule: after adding or copying an agent or skill, grep it for `server/|reviewer-core|LEARNINGS|pnpm arch|pr-self-review`, and check every agent/skill it names exists in `.claude/`.
+Evidence: .claude/agents/README.md
+Promoted: no
+
+## 2026-10-06 · context · DevDigest MCP tool names repeat the server name
+Symptom: an agent's `tools:` allowlist named `mcp__devdigest__get_conventions`, so the agent silently got no MCP tools.
+Cause: the tools are registered as `devdigest_get_conventions` etc., so the full name is `mcp__devdigest__devdigest_get_conventions`.
+Rule: copy MCP tool names into `tools:` from a live session's tool list, never write them by hand.
+Evidence: .claude/agents/spec-creator.md:4, api/specs/mcp.md "Tools"
+Promoted: no
+
 ## 2026-09-30 · mistake · e2e.sh brings the stack up, then every flow fails
 Symptom: `./scripts/e2e.sh` starts Postgres, the API and the web app, then the flows fail at once.
 Cause: the flows shell out to the `agent-browser` CLI, which isn't installed.
