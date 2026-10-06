@@ -36,6 +36,7 @@ type Prompt struct {
 	System        string   // trusted: the agent's system prompt
 	Task          string   // trusted: one line, e.g. "Review PR #482 'rate limit'"
 	PRDescription string   // untrusted: written by the PR author
+	Intent        string   // untrusted: pre-rendered derived intent/scope (intent.Intent.PromptText)
 	Skills        []string // trusted: linked skill bodies
 	Memory        []string // trusted: remembered review guidance
 	RepoMap       string   // untrusted: skeleton of the repository's code
@@ -55,6 +56,7 @@ type Assembly struct {
 	Callers       string `json:"callers,omitempty"`
 	RepoMap       string `json:"repo_map,omitempty"`
 	PRDescription string `json:"pr_description,omitempty"`
+	Intent        string `json:"intent,omitempty"`
 	User          string `json:"user"`
 }
 
@@ -63,8 +65,8 @@ type Assembly struct {
 // part of it.
 //
 // The user message has these sections, in order, each left out when empty:
-// task, PR description, skills, memory, repository skeleton, project context,
-// callers, and last the diff.
+// task, PR description, PR intent, skills, memory, repository skeleton,
+// project context, callers, and last the diff.
 func (p Prompt) Assemble(diff string) Assembly {
 	a := Assembly{System: p.System + "\n\n" + injectionGuard}
 
@@ -84,6 +86,9 @@ func (p Prompt) Assemble(diff string) Assembly {
 	if !blank(p.PRDescription) {
 		a.PRDescription = truncate(p.PRDescription, maxPRDescription)
 	}
+	if !blank(p.Intent) {
+		a.Intent = p.Intent
+	}
 	if !blank(p.RepoMap) {
 		a.RepoMap = p.RepoMap
 	}
@@ -99,6 +104,7 @@ func (p Prompt) Assemble(diff string) Assembly {
 	}
 	add("", p.Task)
 	add("## PR description\n", wrapIf("pr-description", a.PRDescription))
+	add("## PR intent\n", wrapIf("pr-intent", a.Intent))
 	add("## Skills / rules\n", a.Skills)
 	add("## Relevant memory\n", a.Memory)
 	add("## Repo skeleton\n", wrapIf("repo-map", a.RepoMap))
@@ -114,14 +120,33 @@ func (p Prompt) Assemble(diff string) Assembly {
 // block: "</untrusted" in any letter case, with or without a space after "</".
 var closeTag = regexp.MustCompile(`(?i)</\s*untrusted`)
 
+// unsafeSourceChar matches any character a label passed as source must not
+// contain: the current constant labels ("pr-description", "doc:specs/x.md",
+// "issue-#9", …) never need one, but a document label built from a PR-
+// controlled path ("doc:" + path) could contain '"', '<' or '>' and close
+// the <untrusted> tag early.
+var unsafeSourceChar = regexp.MustCompile(`[^A-Za-z0-9._:/#-]`)
+
 // untrusted wraps content in an <untrusted> block labelled with its source.
 // It escapes anything inside that looks like the closing tag, so the content
-// can't end the block early and pass itself off as instructions.
+// can't end the block early and pass itself off as instructions. source is
+// sanitised the same way, since a label derived from untrusted text (a
+// document path) could otherwise break out of the source="…" attribute.
 func untrusted(source, content string) string {
+	safeSource := unsafeSourceChar.ReplaceAllString(source, "_")
 	safe := closeTag.ReplaceAllStringFunc(content, func(tag string) string {
 		return `<\/` + tag[2:]
 	})
-	return "<untrusted source=\"" + source + "\">\n" + safe + "\n</untrusted>"
+	return "<untrusted source=\"" + safeSource + "\">\n" + safe + "\n</untrusted>"
+}
+
+// Untrusted wraps content in an <untrusted> block labelled with source, the
+// same way Assemble wraps a prompt's untrusted fields. It escapes anything
+// inside that looks like the closing tag. internal/intent uses it to wrap the
+// sources it gathers (title, description, issues, documents, branch, commits,
+// changed files) before sending them to the intent model.
+func Untrusted(source, content string) string {
+	return untrusted(source, content)
 }
 
 // wrapIf wraps content like untrusted, or returns "" when content is empty.

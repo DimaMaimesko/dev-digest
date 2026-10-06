@@ -321,6 +321,57 @@ func TestPostRetries(t *testing.T) {
 	}
 }
 
+func TestIssue(t *testing.T) {
+	c, _ := newFake(t, map[string][]string{
+		"/repos/acme/w/issues/42": {`200 {"title": "Bug", "body": "It crashes."}`},
+		"/repos/acme/w/issues/43": {`200 {"title": "No body", "body": null}`},
+	})
+	got, err := c.Issue(context.Background(), "acme", "w", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Issue{Title: "Bug", Body: "It crashes."}
+	if got != want {
+		t.Errorf("Issue(42) = %+v, want %+v", got, want)
+	}
+	got, err = c.Issue(context.Background(), "acme", "w", 43)
+	if err != nil || got.Body != "" {
+		t.Errorf("Issue(43) = %+v, err %v; want empty body", got, err)
+	}
+}
+
+func TestIssueNotFound(t *testing.T) {
+	c, _ := newFake(t, map[string][]string{"/repos/acme/w/issues/404": {`404 {"message": "Not Found"}`}})
+	_, err := c.Issue(context.Background(), "acme", "w", 404)
+	var status *StatusError
+	if !errors.As(err, &status) || status.Code != 404 {
+		t.Errorf("err = %v, want a 404 StatusError", err)
+	}
+}
+
+func TestIssueRateLimitedThenSuccess(t *testing.T) {
+	c, f := newFake(t, map[string][]string{
+		"/repos/acme/w/issues/7": {`429 {"message": "slow down"}`, `200 {"title": "Ok", "body": null}`},
+	})
+	got, err := c.Issue(context.Background(), "acme", "w", 7)
+	if err != nil || got.Title != "Ok" {
+		t.Errorf("Issue = %+v, err %v", got, err)
+	}
+	if f.count() != 2 {
+		t.Errorf("%d requests, want 2 (rate limited once, then it goes through the existing retry loop)", f.count())
+	}
+}
+
+func TestIssueCancel(t *testing.T) {
+	c, _ := newFake(t, map[string][]string{"/repos/acme/w/issues/7": {`503 down`}})
+	c.retryDelay = time.Hour
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := c.Issue(ctx, "acme", "w", 7); !errors.Is(err, context.DeadlineExceeded) {
+		t.Errorf("err = %v, want the context's error", err)
+	}
+}
+
 func TestLogin(t *testing.T) {
 	c, f := newFake(t, map[string][]string{"/user": {`200 {"login": "octocat", "id": 1}`}})
 	if login, err := c.Login(context.Background()); err != nil || login != "octocat" || f.requests[0].Header.Get("Authorization") != "Bearer ghp_test" {

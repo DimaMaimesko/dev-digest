@@ -13,6 +13,23 @@ export const Intent = z.object({
 });
 export type Intent = z.infer<typeof Intent>;
 
+export const IntentConfidence = z.enum(['high', 'medium', 'low']);
+export type IntentConfidence = z.infer<typeof IntentConfidence>;
+
+export const IntentSource = z.object({
+  kind: z.enum(['title', 'description', 'issue', 'document', 'branch', 'commits', 'files']),
+  label: z.string(),
+  ref: z.string().nullable(),
+  truncated: z.boolean(),
+});
+export type IntentSource = z.infer<typeof IntentSource>;
+
+export const IntentUnresolved = z.object({
+  ref: z.string(),
+  reason: z.string(),
+});
+export type IntentUnresolved = z.infer<typeof IntentUnresolved>;
+
 // ---- Blast radius ----
 export const ChangedSymbol = z.object({
   name: z.string(),

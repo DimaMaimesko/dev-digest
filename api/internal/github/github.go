@@ -153,6 +153,29 @@ func (c *Client) Pull(ctx context.Context, owner, repo string, number int) (Pull
 	return p.pull(), nil
 }
 
+// Issue is a GitHub issue (or, since GitHub numbers them in one sequence,
+// a pull request referenced by its issue number).
+type Issue struct {
+	Title string
+	Body  string // "" when the issue has no description
+}
+
+// Issue returns the title and body of issue number of owner/repo.
+func (c *Client) Issue(ctx context.Context, owner, repo string, number int) (Issue, error) {
+	var out struct {
+		Title string  `json:"title"`
+		Body  *string `json:"body"`
+	}
+	if err := c.get(ctx, fmt.Sprintf("%s/issues/%d", repoPath(owner, repo), number), &out); err != nil {
+		return Issue{}, err
+	}
+	issue := Issue{Title: out.Title}
+	if out.Body != nil {
+		issue.Body = *out.Body
+	}
+	return issue, nil
+}
+
 // Login returns the login of the account the token belongs to.
 func (c *Client) Login(ctx context.Context) (string, error) {
 	var user struct {

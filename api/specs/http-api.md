@@ -22,7 +22,7 @@ status codes, side effects and the rules a change must keep.
   path, commits by time, findings by location.
 - Multi-statement writes are one transaction.
 
-## Routes (49)
+## Routes (50)
 
 ### Health and workspace
 | Route | Notes |
@@ -48,6 +48,7 @@ status codes, side effects and the rules a change must keep.
 | Route | Notes |
 |---|---|
 | `GET /pulls/{id}` | With a token, syncs the PR (first 100 files and commits) and saves it, then answers from the database |
+| `GET /pulls/{id}/intent` | The PR's most recently derived intent (the Intent Layer, `specs/intent-layer.md`), or `null` when none is stored. The seeded demo PR (`acme/payments-api` #482) always has one |
 | `GET /pulls/{id}/comments` | Passes through to GitHub (first 100); nothing is saved |
 | `POST /pulls/{id}/comments` | Posts a comment or a reply (`in_reply_to`, still needs `path` and `line`). Not retried except on a rate limit |
 

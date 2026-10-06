@@ -20,7 +20,7 @@ func counts(t *testing.T, db *pgxpool.Pool) map[string]int {
 	t.Helper()
 	out := map[string]int{}
 	for _, table := range []string{"workspaces", "users", "workspace_members", "settings", "repos", "pull_requests",
-		"pr_files", "pr_commits", "agent_runs", "run_traces", "reviews", "findings", "agents",
+		"pr_files", "pr_commits", "pr_intent", "agent_runs", "run_traces", "reviews", "findings", "agents",
 		"skills", "skill_versions", "agent_skills"} {
 		var n int
 		if err := db.QueryRow(context.Background(), "SELECT count(*) FROM "+table).Scan(&n); err != nil {
@@ -32,8 +32,8 @@ func counts(t *testing.T, db *pgxpool.Pool) map[string]int {
 }
 
 var seeded = map[string]int{"workspaces": 1, "users": 1, "workspace_members": 1, "settings": 4, "repos": 1,
-	"pull_requests": 1, "pr_files": 4, "pr_commits": 1, "agent_runs": 1, "run_traces": 1, "reviews": 1, "findings": 2,
-	"agents": 3, "skills": 4, "skill_versions": 4, "agent_skills": 2}
+	"pull_requests": 1, "pr_files": 4, "pr_commits": 1, "pr_intent": 1, "agent_runs": 1, "run_traces": 1, "reviews": 1,
+	"findings": 2, "agents": 3, "skills": 4, "skill_versions": 4, "agent_skills": 2}
 
 func TestRun(t *testing.T) {
 	db := pgtest.New(t)
@@ -61,6 +61,29 @@ func TestRun(t *testing.T) {
 		FROM reviews v JOIN agent_runs r ON r.id = v.run_id JOIN run_traces t ON t.run_id = r.id`).Scan(&status, &cost, &traceCost)
 	if err != nil || status != "done" || cost != 0.0021 || traceCost != 0.0021 {
 		t.Errorf("demo run: status %q, cost %v, trace cost %v, err %v", status, cost, traceCost, err)
+	}
+
+	// The demo PR has a seeded intent, so the Overview panel and the e2e
+	// flow have something to show without any API key.
+	var intentConfidence, intentProvider, intentModel string
+	var fingerprint *string
+	db.QueryRow(ctx, `SELECT confidence, provider, model, fingerprint FROM pr_intent`).
+		Scan(&intentConfidence, &intentProvider, &intentModel, &fingerprint)
+	if intentConfidence != "medium" || intentProvider != "anthropic" || intentModel != "haiku" || fingerprint != nil {
+		t.Errorf("intent: confidence %q, provider %q, model %q, fingerprint %v",
+			intentConfidence, intentProvider, intentModel, fingerprint)
+	}
+	// Source labels must match what intent.Gather actually writes
+	// (internal/intent/gather.go), not a display-style name.
+	var sourceLabels []string
+	labelRows, _ := db.Query(ctx, `SELECT jsonb_array_elements(sources) ->> 'label' FROM pr_intent ORDER BY 1`)
+	for labelRows.Next() {
+		var l string
+		labelRows.Scan(&l)
+		sourceLabels = append(sourceLabels, l)
+	}
+	if got := strings.Join(sourceLabels, ", "); got != "branch, changed-files, commits, pr-description, pr-title" {
+		t.Errorf("intent sources labels: %s", got)
 	}
 
 	// The demo skills are linked to the agents seeded with them.

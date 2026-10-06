@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "intent": {
+      "type": "string",
+      "description": "One paragraph, in English, stating why this pull request exists."
+    },
+    "in_scope": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Short phrases of what the change is expected to include."
+    },
+    "out_of_scope": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Short phrases of what the change does not cover."
+    }
+  },
+  "required": ["intent", "in_scope", "out_of_scope"],
+  "additionalProperties": false
+}

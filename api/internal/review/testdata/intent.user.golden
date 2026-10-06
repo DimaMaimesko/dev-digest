@@ -1,0 +1,64 @@
+Review PR #482 'rate limit' (high blast radius: src/api/public.ts)
+
+## PR description
+<untrusted source="pr-description">
+Adds rate limiting to the public /api endpoints.
+Додає обмеження частоти запитів.
+</untrusted>
+
+## PR intent
+<untrusted source="pr-intent">
+Confidence: medium
+Intent: Add rate limiting to protect public API endpoints from abusive clients.
+In scope:
+- Token-bucket middleware for public endpoints
+- Rate-limit configuration
+Out of scope:
+- Authenticated endpoints
+- Changes to authentication
+</untrusted>
+
+## Skills / rules
+## secret-gate
+Detect sk_live keys.
+
+## n-plus-one
+Flag queries inside loops.
+
+## Relevant memory
+- Do not flag try/catch around JSON.parse
+- This repo uses zod for validation
+
+## Repo skeleton
+<untrusted source="repo-map">
+src/api/public.ts
+  function handler(req)
+src/db/client.ts
+  const db
+</untrusted>
+
+## Project context
+<untrusted source="spec-0">
+# Security baseline
+No secrets in code.
+</untrusted>
+
+<untrusted source="spec-1">
+# Style
+Prefer early returns.
+</untrusted>
+
+## Callers of changed symbols
+<untrusted source="callers">
+### src/api/public.ts
+- `handler` — function handler(req)
+</untrusted>
+
+## Diff to review
+<untrusted source="diff">
+diff --git a/src/config.ts b/src/config.ts
+@@ -10,3 +10,4 @@
+   port: 3000,
++  stripeKey: "sk_live_xxx",
+   redisUrl: x,
+</untrusted>

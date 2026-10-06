@@ -151,6 +151,9 @@ func demo(ctx context.Context, q *postgres.Queries, workspace, user uuid.UUID) e
 	}); err != nil {
 		return err
 	}
+	if err := demoIntent(ctx, q, pull); err != nil {
+		return err
+	}
 	run, err := demoRun(ctx, q, workspace, pull)
 	if err != nil {
 		return err
@@ -176,6 +179,48 @@ func demo(ctx context.Context, q *postgres.Queries, workspace, user uuid.UUID) e
 		}
 	}
 	return nil
+}
+
+// demoIntent stores the seeded intent for the demo PR, so the Overview panel
+// and the e2e flow have something to show without any API key. fingerprint
+// stays NULL, so the first real review re-derives it instead of reusing a
+// value that was never actually checked against the stored title/body.
+func demoIntent(ctx context.Context, q *postgres.Queries, pull uuid.UUID) error {
+	marshal := func(v any) []byte {
+		data, err := json.Marshal(v)
+		if err != nil {
+			panic(err) // the literals below always marshal
+		}
+		return data
+	}
+	return q.UpsertPullIntent(ctx, postgres.UpsertPullIntentParams{
+		PrID: pull,
+		Intent: "Protect the public API from abuse by unauthenticated clients by adding per-client " +
+			"rate limiting to the public endpoints.",
+		InScope: marshal([]string{
+			"Token-bucket rate limiting middleware for public /api endpoints",
+			"Rate-limit configuration",
+		}),
+		OutOfScope: marshal([]string{
+			"Authenticated and internal endpoints",
+			"Changes to authentication",
+		}),
+		Confidence: "medium",
+		// Labels match what intent.Gather actually produces
+		// (internal/intent/gather.go), not a TS-style display name.
+		Sources: marshal([]map[string]any{
+			{"kind": "title", "label": "pr-title", "ref": nil, "truncated": false},
+			{"kind": "description", "label": "pr-description", "ref": nil, "truncated": false},
+			{"kind": "branch", "label": "branch", "ref": "feat/rate-limit-public", "truncated": false},
+			{"kind": "commits", "label": "commits", "ref": nil, "truncated": false},
+			{"kind": "files", "label": "changed-files", "ref": nil, "truncated": false},
+		}),
+		Unresolved:  marshal([]any{}),
+		HeadSha:     new("a1b2c3d4e5f6"),
+		Fingerprint: nil,
+		Provider:    new("anthropic"),
+		Model:       new("haiku"),
+	})
 }
 
 // Demo run's outcome, as a finished review run records it.

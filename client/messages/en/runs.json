@@ -59,6 +59,17 @@
       "args": "args",
       "result": "result",
       "previewTruncated": "(preview truncated)"
+    },
+    "intent": {
+      "title": "Intent",
+      "derived": "Derived",
+      "reused": "Reused",
+      "failed": "No intent — {reason}",
+      "model": "Intent model",
+      "confidence": "Confidence",
+      "sources": "Sources",
+      "unresolved": "Unresolved",
+      "none": "—"
     }
   },
   "drawer": {
