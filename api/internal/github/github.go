@@ -334,7 +334,13 @@ func (c *Client) send(ctx context.Context, method, path string, in, out any) err
 	delay := c.retryDelay
 	for attempt := 0; ; attempt++ {
 		err := c.sendOnce(ctx, method, path, body, out)
-		if err == nil || attempt == c.retries || !retryable(ctx, err, method) {
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err() // cancelled, or out of time: report that, not the failed attempt
+		}
+		if attempt == c.retries || !retryable(err, method) {
 			return err
 		}
 		select {
@@ -407,10 +413,7 @@ func errorMessage(body []byte) string {
 // retryable reports whether trying the same request again may succeed, and
 // is safe: only a GET is repeated after an error that may come after GitHub
 // did the work.
-func retryable(ctx context.Context, err error, method string) bool {
-	if ctx.Err() != nil {
-		return false // cancelled, or out of time
-	}
+func retryable(err error, method string) bool {
 	var status *StatusError
 	if errors.As(err, &status) {
 		return status.Code == http.StatusTooManyRequests || (status.Code >= 500 && method == http.MethodGet)

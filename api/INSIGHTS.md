@@ -14,6 +14,13 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
+## 2026-10-05 · mistake · A retry loop must report a cancel as ctx.Err(), not the last HTTP error
+Symptom: TestCompleteJSONStopsWhenCancelled failed only in a full `go test -race ./...`: "API returned 500… want context.Canceled".
+Cause: a cancel landing after the 500 arrived made `retryable(ctx, err)` say "stop", so `send` returned the 500.
+Rule: in an HTTP retry loop, check `ctx.Err()` right after a failed attempt and return it; keep ctx out of `retryable`.
+Evidence: internal/openai/openai.go `send`, internal/github/github.go `send`; repro: `go test -race -run <Test> -count=3000 -cpu 1,2,8`
+Promoted: no
+
 ## 2026-10-05 · pattern · Smoke-testing `cmd/mcp` by hand over stdio
 Symptom: piping an `initialize` message into `go -C api run ./cmd/mcp` prints nothing.
 Cause: stdin closes at once, so the stdio transport ends before the server answers.
