@@ -5,7 +5,9 @@
 // (default 3001), WEB_PORT (default 3000; the web app's port, allowed by
 // CORS), DEVDIGEST_CLONE_DIR (default ~/.devdigest/workspace; a relative path
 // is relative to the working directory) and LOG_LEVEL (default info). API keys
-// come from ~/.devdigest/secrets.json, then from the environment. The database
+// come from ~/.devdigest/secrets.json, then from the environment. With
+// ANTHROPIC_VIA_CLAUDE_CODE=true, the anthropic provider runs through the
+// local claude CLI on its signed-in subscription and needs no key. The database
 // must be migrated and seeded (cmd/db), as scripts/dev.sh does.
 //
 // It doesn't read api/.env itself: scripts/dev.sh loads that file into its
@@ -31,6 +33,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/anthropic"
+	"github.com/DimaMaimesko/dev-digest/api/internal/claudecode"
 	"github.com/DimaMaimesko/dev-digest/api/internal/github"
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
 	"github.com/DimaMaimesko/dev-digest/api/internal/jobs"
@@ -96,10 +99,20 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		OpenAI:     openai.OpenAIURL,
 		OpenRouter: openai.OpenRouterURL,
 		Anthropic:  anthropic.DefaultURL,
+		ClaudeCode: cfg.claudeCode,
+	}
+	var claude *claudecode.Client
+	if cfg.claudeCode {
+		bin, err := claudecode.Find()
+		if err != nil {
+			return fmt.Errorf("ANTHROPIC_VIA_CLAUDE_CODE: %w", err)
+		}
+		claude = claudecode.New(bin, os.Environ())
+		log.Info("anthropic reviews run through the claude CLI", "path", bin)
 	}
 	reviews := runner.New(runner.Config{
 		DB:        pool,
-		LLM:       reviewModel(store, modelAPIs),
+		LLM:       reviewModel(store, modelAPIs, claude),
 		CloneDir:  cfg.cloneDir,
 		RepoIntel: cfg.repoIntel,
 		Log:       log,
@@ -154,9 +167,13 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 
 // reviewModel returns the model client for a provider, with its API key
 // read from the secrets store at each run, so a key saved in the web app
-// takes effect at once.
-func reviewModel(store *secrets.Store, apis httpapi.ModelAPIs) runner.LLMFor {
+// takes effect at once. When claude isn't nil, the anthropic provider runs
+// through it instead, without a key.
+func reviewModel(store *secrets.Store, apis httpapi.ModelAPIs, claude *claudecode.Client) runner.LLMFor {
 	return func(provider string) (review.LLM, error) {
+		if provider == "anthropic" && claude != nil {
+			return claude, nil
+		}
 		name, ok := secrets.ProviderKey(provider)
 		if !ok {
 			return nil, fmt.Errorf("unknown provider %q", provider)
@@ -187,6 +204,7 @@ type config struct {
 	secretsPath string
 	logLevel    slog.Level
 	repoIntel   bool // repo-intel context in reviews; on unless REPO_INTEL_ENABLED=false
+	claudeCode  bool // the anthropic provider runs through the claude CLI; ANTHROPIC_VIA_CLAUDE_CODE=true
 }
 
 // loadConfig reads the settings from the environment, with the same names and
@@ -204,6 +222,7 @@ func loadConfig(getenv func(string) string) (config, error) {
 		secretsPath: filepath.Join(home, ".devdigest", "secrets.json"),
 		logLevel:    slog.LevelInfo,
 		repoIntel:   getenv("REPO_INTEL_ENABLED") != "false",
+		claudeCode:  getenv("ANTHROPIC_VIA_CLAUDE_CODE") == "true",
 	}
 	if v := getenv("DEVDIGEST_CLONE_DIR"); v != "" {
 		dir, err := filepath.Abs(v)

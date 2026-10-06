@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DimaMaimesko/dev-digest/api/internal/claudecode"
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
 	"github.com/DimaMaimesko/dev-digest/api/internal/secrets"
 )
@@ -34,9 +35,9 @@ func TestLoadConfig(t *testing.T) {
 		{
 			name: "everything set",
 			env: map[string]string{"DATABASE_URL": "postgres://x/y", "API_PORT": "3002", "WEB_PORT": "4000", "LOG_LEVEL": "debug", "DEVDIGEST_CLONE_DIR": "/srv/clones",
-				"REPO_INTEL_ENABLED": "false"},
+				"REPO_INTEL_ENABLED": "false", "ANTHROPIC_VIA_CLAUDE_CODE": "true"},
 			want: config{databaseURL: "postgres://x/y", port: 3002, webOrigin: "http://localhost:4000", logLevel: slog.LevelDebug,
-				cloneDir: "/srv/clones", secretsPath: "/home/ann/.devdigest/secrets.json", repoIntel: false},
+				cloneDir: "/srv/clones", secretsPath: "/home/ann/.devdigest/secrets.json", repoIntel: false, claudeCode: true},
 		},
 		{
 			// .env.example ships LOG_LEVEL= empty.
@@ -106,7 +107,7 @@ func TestSilentLogLevel(t *testing.T) {
 func TestReviewModel(t *testing.T) {
 	env := map[string]string{"OPENAI_API_KEY": "sk-openai", "ANTHROPIC_API_KEY": "sk-ant"}
 	store := secrets.New(filepath.Join(t.TempDir(), "secrets.json"), func(k string) string { return env[k] })
-	model := reviewModel(store, httpapi.ModelAPIs{OpenAI: "http://openai.test", Anthropic: "http://anthropic.test"})
+	model := reviewModel(store, httpapi.ModelAPIs{OpenAI: "http://openai.test", Anthropic: "http://anthropic.test"}, nil)
 	tests := []struct {
 		provider, wantErr string
 	}{
@@ -123,5 +124,24 @@ func TestReviewModel(t *testing.T) {
 		case tt.wantErr != "" && (err == nil || err.Error() != tt.wantErr):
 			t.Errorf("%s: err = %v, want %q", tt.provider, err, tt.wantErr)
 		}
+	}
+}
+
+// With the claude CLI, the anthropic provider runs through it and needs no
+// key; the other providers still need theirs.
+func TestReviewModelClaudeCode(t *testing.T) {
+	store := secrets.New(filepath.Join(t.TempDir(), "secrets.json"), func(string) string { return "" })
+	claude := claudecode.New("claude", nil)
+	model := reviewModel(store, httpapi.ModelAPIs{Anthropic: "http://anthropic.test"}, claude)
+
+	llm, err := model("anthropic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if llm != claude {
+		t.Errorf("anthropic got %T, want the claude CLI client", llm)
+	}
+	if _, err := model("openai"); err == nil || err.Error() != "OPENAI_API_KEY is not configured" {
+		t.Errorf("openai: err = %v, want the missing key", err)
 	}
 }
