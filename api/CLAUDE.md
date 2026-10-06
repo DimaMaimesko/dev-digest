@@ -21,7 +21,7 @@ is fixed in Go with a test and listed in `docs/deviations-from-ts.md`.
 - `internal/repointel`: the indexer and a review's context
 - `internal/repos`, `pulls`, `agents`, `skills`, `secrets`, `seed`, `migrate`: one job each
 - `internal/mcpserver`: the MCP server's tools, a client of the HTTP API
-- `internal/{openai,anthropic,github,git}`: adapters
+- `internal/{openai,anthropic,claudecode,github,git}`: adapters (`claudecode` runs `claude -p`)
 - `internal/postgres`: sqlc output · `migrations/`: embedded SQL
 - Every package, and what it was ported from → `docs/architecture.md`
 

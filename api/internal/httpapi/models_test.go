@@ -99,6 +99,22 @@ func TestProviderModelsUnavailable(t *testing.T) {
 	}
 }
 
+// With Claude Code, the Anthropic models are the CLI's aliases, listed
+// without a key and without calling the API.
+func TestProviderModelsClaudeCode(t *testing.T) {
+	apis, calls := modelAPIs(t, 0)
+	apis.ClaudeCode = true
+	f := newFixture(t)
+	f.modelAPIs = apis
+	assertJSON(t, f.get(t, "/providers/anthropic/models"), http.StatusOK, `[
+		{"id": "sonnet", "provider": "anthropic", "label": "Claude Sonnet (latest, via Claude Code)", "created": null, "pricing": null, "contextLength": null},
+		{"id": "opus", "provider": "anthropic", "label": "Claude Opus (latest, via Claude Code)", "created": null, "pricing": null, "contextLength": null},
+		{"id": "haiku", "provider": "anthropic", "label": "Claude Haiku (latest, via Claude Code)", "created": null, "pricing": null, "contextLength": null}]`)
+	if calls.Load() != 0 {
+		t.Errorf("%d calls to the Anthropic API, want none", calls.Load())
+	}
+}
+
 func TestAgentModels(t *testing.T) {
 	apis, _ := modelAPIs(t, 0)
 	f := withModelKeys(newFixture(t), apis)

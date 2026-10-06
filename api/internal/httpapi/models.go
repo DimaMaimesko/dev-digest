@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/anthropic"
+	"github.com/DimaMaimesko/dev-digest/api/internal/claudecode"
 	"github.com/DimaMaimesko/dev-digest/api/internal/github"
 	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
@@ -27,6 +28,9 @@ type ModelAPIs struct {
 	OpenAI     string
 	OpenRouter string
 	Anthropic  string
+	// ClaudeCode means Anthropic models run through the claude CLI: their
+	// list is the CLI's model aliases, and needs no API key.
+	ClaudeCode bool
 }
 
 // modelJSON is a model the agent editor offers (ModelInfo in
@@ -98,6 +102,12 @@ func (s *Server) fetchModels(ctx context.Context, provider string) ([]modelJSON,
 	out := []modelJSON{}
 	switch provider {
 	case "anthropic":
+		if s.modelAPIs.ClaudeCode {
+			for _, m := range claudecode.Models() {
+				out = append(out, modelJSON{ID: m.ID, Provider: provider, Label: &m.Name})
+			}
+			return out, nil
+		}
 		key, err := s.modelKey(secrets.AnthropicKey, s.modelAPIs.Anthropic)
 		if err != nil {
 			return nil, err
