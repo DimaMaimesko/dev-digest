@@ -14,6 +14,19 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
+## 2026-10-06 · context · `claude -p` flags that silently break the claudecode adapter
+Symptom: a run on the Pro subscription fails or ignores the schema, or each call costs ~20k input tokens.
+Cause: `--json-schema` answers through an extra tool turn; `--bare` reads only ANTHROPIC_API_KEY, never the OAuth login; the CLI's default system prompt is ~20k tokens.
+Rule: never add `--max-turns 1` or `--bare` to `claudecode`; always pass `--system-prompt`. Read the answer from `structured_output`; errors are `is_error: true` + `result`.
+Evidence: api/internal/claudecode/claudecode.go CompleteJSON; check by hand with `env -u ANTHROPIC_API_KEY claude -p --output-format json …`
+Promoted: no
+
+## 2026-10-06 · decision · Claude Code reroutes the `anthropic` provider instead of being a fourth provider
+Cause: a new provider value would change the Zod `Provider` enum, settings, secrets status and the client's provider lists; this is a one-person, local-only mode.
+Rule: keep it behind `ANTHROPIC_VIA_CLAUDE_CODE=true` in cmd/api `reviewModel` and `ModelAPIs.ClaudeCode`; add a real provider only if both modes must coexist.
+Evidence: api/cmd/api/main.go reviewModel; api/internal/httpapi/models.go fetchModels
+Promoted: no
+
 ## 2026-10-05 · mistake · A retry loop must report a cancel as ctx.Err(), not the last HTTP error
 Symptom: TestCompleteJSONStopsWhenCancelled failed only in a full `go test -race ./...`: "API returned 500… want context.Canceled".
 Cause: a cancel landing after the 500 arrived made `retryable(ctx, err)` say "stop", so `send` returned the 500.

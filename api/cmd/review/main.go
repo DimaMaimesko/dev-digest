@@ -14,6 +14,9 @@
 // By default it calls OpenRouter with the key in OPENROUTER_API_KEY. With
 // -provider openai it calls OpenAI with the key in OPENAI_API_KEY, and with
 // -provider anthropic, Anthropic with the key in ANTHROPIC_API_KEY. With
+// -provider claude-code it runs the local claude CLI on its signed-in Claude
+// subscription, with no key; -model is then sonnet, opus, haiku or a full
+// model ID. With
 // -base-url it calls any other OpenAI-compatible API, such as Ollama at
 // http://localhost:11434/v1, with the key in OPENAI_API_KEY if one is set.
 //
@@ -32,6 +35,7 @@ import (
 	"strings"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/anthropic"
+	"github.com/DimaMaimesko/dev-digest/api/internal/claudecode"
 	"github.com/DimaMaimesko/dev-digest/api/internal/diff"
 	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/review"
@@ -57,7 +61,7 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		model      = flags.String("model", "", "model ID, such as deepseek/deepseek-v4-flash (required)")
 		promptFile = flags.String("prompt", "", "file with the agent's system prompt (required)")
 		diffFile   = flags.String("diff", "-", "file with the diff to review; - reads standard input")
-		provider   = flags.String("provider", "openrouter", "openrouter, openai or anthropic")
+		provider   = flags.String("provider", "openrouter", "openrouter, openai, anthropic or claude-code")
 		baseURL    = flags.String("base-url", "", "call another OpenAI-compatible API at this URL instead")
 		strategy   = flags.String("strategy", "auto", "auto, single-pass or map-reduce")
 		task       = flags.String("task", "", `one line framing the review, such as "Review PR #482"`)
@@ -138,8 +142,14 @@ func newLLM(provider, baseURL string, getenv func(string) string) (review.LLM, e
 			return nil, errors.New("set ANTHROPIC_API_KEY")
 		}
 		return anthropic.New(anthropic.DefaultURL, key), nil
+	case "claude-code":
+		bin, err := claudecode.Find()
+		if err != nil {
+			return nil, err
+		}
+		return claudecode.New(bin, os.Environ()), nil
 	}
-	return nil, fmt.Errorf("-provider %q: want openrouter, openai or anthropic", provider)
+	return nil, fmt.Errorf("-provider %q: want openrouter, openai, anthropic or claude-code", provider)
 }
 
 // readDiff reads and parses the diff in file, or in stdin when file is "-".
