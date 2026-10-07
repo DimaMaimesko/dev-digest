@@ -7,9 +7,9 @@
     { "cmd": ["find", "text", "Add rate limiting to public API endpoints", "click"], "label": "open the PR row" },
     { "cmd": ["wait", "--url", "/pulls/482"], "label": "navigate to the PR detail route" },
     { "cmd": ["wait", "--load", "networkidle"], "label": "PR detail data settles" },
-    { "cmd": ["wait", "--text", "Intent"], "label": "Intent panel title is visible" },
+    { "cmd": ["wait", "--text", "INTENT"], "label": "Intent panel title is visible (CSS-uppercased)" },
     { "cmd": ["wait", "--text", "Confidence: medium"], "label": "seeded intent's confidence badge renders" },
     { "cmd": ["wait", "--text", "per-client rate limiting"], "label": "seeded intent statement text renders" },
-    { "cmd": ["wait", "--text", "Out of scope"], "label": "Out of scope section renders" }
+    { "cmd": ["wait", "--text", "OUT OF SCOPE"], "label": "Out of scope section renders (CSS-uppercased)" }
   ]
 }
