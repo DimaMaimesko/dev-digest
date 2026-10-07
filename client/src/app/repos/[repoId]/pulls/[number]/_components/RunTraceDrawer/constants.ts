@@ -19,4 +19,5 @@ export const PROMPT_COLORS = {
   specs: "var(--text-secondary)",
   callers: "var(--warn)",
   user: "var(--ok)",
+  intent: "var(--accent)",
 } as const;

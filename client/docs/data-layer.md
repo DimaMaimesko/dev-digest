@@ -23,6 +23,7 @@ Every query and mutation is a hook in `src/lib/hooks/`, grouped by domain:
 | `reviews.ts` | start a review, runs, active runs, reviews, finding actions, PR comments, the SSE live log |
 | `trace.ts` | a run's trace |
 | `repo-intel.ts` | index state and resync (not used by any screen yet) |
+| `intent.ts` | a PR's stored intent (Intent Layer) |
 
 Import from `@/lib/hooks` (the barrel) or a domain file directly.
 
@@ -30,9 +31,11 @@ Import from `@/lib/hooks` (the barrel) or a domain file directly.
 `["settings"]`, `["secrets-status"]`, `["repos"]`, `["pulls", repoId]`, `["pull", prId]`,
 `["agents"]`, `["agent", id]`, `["provider-models", provider]`, `["reviews", prId]`,
 `["pr-runs", prId]`, `["pr-active-runs", prId]`, `["run-trace", runId]`,
-`["repo-intel-state", repoId]`. A mutation invalidates the keys it changes in `onSuccess`.
-For example, deleting a run invalidates both `pr-runs` and `reviews`, because the server deletes
-the run's review too.
+`["repo-intel-state", repoId]`, `["pr-intent", prId]`. A mutation invalidates the keys it changes
+in `onSuccess`. For example, deleting a run invalidates both `pr-runs` and `reviews`, because the
+server deletes the run's review too. The PR detail page invalidates `pr-intent` alongside
+`pr-runs` whenever a run settles, since the settled run may have derived or reused the PR's
+intent.
 
 ### Polling
 - `usePulls`: every 60 s.

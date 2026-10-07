@@ -28,6 +28,11 @@ import (
 // openrouter), or an error saying why there is none, such as a missing key.
 type LLMFor func(provider string) (review.LLM, error)
 
+// IntentLLMFor returns the model client for the intent feature's provider
+// and model (the choice saved in settings.feature_models.review_intent, or
+// its default), or an error saying why there is none.
+type IntentLLMFor func(provider, model string) (review.LLM, error)
+
 // Config is what a Runner needs.
 type Config struct {
 	DB       *pgxpool.Pool
@@ -37,6 +42,17 @@ type Config struct {
 	// ranks) on; an agent can still turn it off for itself.
 	RepoIntel bool
 	Log       *slog.Logger
+
+	// IntentLLM resolves the model that derives a pull request's intent. Nil
+	// (only in tests) skips intent derivation entirely, without a log line.
+	IntentLLM IntentLLMFor
+	// GitHubToken returns the GitHub token to read linked issues and fetch a
+	// head commit missing from the clone with, or "" for neither. Optional.
+	GitHubToken func() (string, error)
+	// GitHubAPI is the base URL of GitHub's REST API, for linked-issue reads.
+	GitHubAPI string
+	// IntentTimeout caps one intentFor call (Gather plus Derive). 0 means 60s.
+	IntentTimeout time.Duration
 }
 
 // Runner starts runs and follows them.
@@ -50,6 +66,11 @@ type Runner struct {
 	log       *slog.Logger
 	bus       *bus
 
+	intentLLM     IntentLLMFor
+	githubToken   func() (string, error)
+	githubAPI     string
+	intentTimeout time.Duration
+
 	ctx  context.Context // ends when the runner closes
 	stop context.CancelFunc
 	wg   sync.WaitGroup // the runs in progress
@@ -61,6 +82,7 @@ func New(cfg Config) *Runner {
 	return &Runner{
 		db: cfg.DB, q: postgres.New(cfg.DB), index: repointel.New(cfg.DB), llm: cfg.LLM,
 		cloneDir: cfg.CloneDir, repoIntel: cfg.RepoIntel, log: cfg.Log, bus: newBus(),
+		intentLLM: cfg.IntentLLM, githubToken: cfg.GitHubToken, githubAPI: cfg.GitHubAPI, intentTimeout: cfg.IntentTimeout,
 		ctx: ctx, stop: stop,
 	}
 }
@@ -146,43 +168,70 @@ func (r *Runner) execute(pull postgres.PullRequest, repo postgres.Repo, jobs []j
 		msg := "Failed to load PR diff: " + err.Error()
 		shared.error(msg)
 		for _, j := range jobs {
-			r.finishFailed(j, pull, "failed", msg, 0, review.Usage{})
+			r.finishFailed(j, pull, "failed", msg, 0, review.Usage{}, intentResult{})
 		}
 		return
 	}
 	shared.info(fmt.Sprintf("Diff ready — %d changed file(s); starting %d agent run(s)", len(d.Files), len(jobs)))
 
+	// Intent is derived at most once per request, under the first
+	// not-yet-cancelled run's context (the trigger run), which also carries
+	// its cost. The other runs see the same intent (or its absence) in their
+	// trace, but not its usage.
+	trigger, hasTrigger := firstActive(jobs)
+	var ir intentResult
+	if hasTrigger {
+		ir = r.intentFor(trigger.ctx, pull, repo, shared)
+	}
+
 	for _, j := range jobs {
 		start := time.Now()
 		r.log.Info("review started", "run", j.run, "agent", j.agent.Name, "provider", j.agent.Provider, "model", j.agent.Model)
-		spent, err := r.runOne(j, pull, repo, d, start)
+		jobIR := ir
+		if !hasTrigger || j.run != trigger.run {
+			jobIR.usage = review.Usage{}
+		}
+		spent, err := r.runOne(j, pull, repo, d, start, jobIR)
 		switch {
 		case err == nil:
 			r.log.Info("review done", "run", j.run, "agent", j.agent.Name, "duration", time.Since(start))
 		case r.bus.cancelledByUser(j.run):
 			r.newLog(j.run).error("Run cancelled by user")
-			r.finishFailed(j, pull, "cancelled", "Cancelled by user", time.Since(start), spent)
+			r.finishFailed(j, pull, "cancelled", "Cancelled by user", time.Since(start), spent, jobIR)
 			r.log.Info("review cancelled", "run", j.run, "agent", j.agent.Name)
 		default:
 			if r.ctx.Err() != nil {
 				err = errors.New("the server stopped during the run")
 			}
 			r.newLog(j.run).error("Run failed: " + err.Error())
-			r.finishFailed(j, pull, "failed", err.Error(), time.Since(start), spent)
+			r.finishFailed(j, pull, "failed", err.Error(), time.Since(start), spent, jobIR)
 			r.log.Error("review failed", "run", j.run, "agent", j.agent.Name, "err", err)
 		}
 	}
 }
 
+// firstActive returns the first job whose context isn't already done, and
+// whether there is one: a request whose runs were all cancelled before
+// execute got to them derives no intent.
+func firstActive(jobs []job) (job, bool) {
+	for _, j := range jobs {
+		if j.ctx.Err() == nil {
+			return j, true
+		}
+	}
+	return job{}, false
+}
+
 // runOne reviews the diff with one agent and saves the outcome. It returns
-// what the model calls took, even when it fails.
-func (r *Runner) runOne(j job, pull postgres.PullRequest, repo postgres.Repo, d diff.Diff, start time.Time) (review.Usage, error) {
+// what the model calls took, even when it fails: ir.usage (the trigger run's
+// intent call, zero for the others) plus the review's own usage.
+func (r *Runner) runOne(j job, pull postgres.PullRequest, repo postgres.Repo, d diff.Diff, start time.Time, ir intentResult) (review.Usage, error) {
 	ctx := j.ctx
 	a := j.agent
 	log := r.newLog(j.run)
 	log.info(fmt.Sprintf(`Starting review with agent "%s" (%s/%s)`, a.Name, a.Provider, a.Model))
 	if err := ctx.Err(); err != nil {
-		return review.Usage{}, err // cancelled before its turn
+		return ir.usage, err // cancelled before its turn; ir.usage is the intent cost already paid, when this is the trigger run
 	}
 
 	var llm review.LLM
@@ -191,15 +240,18 @@ func (r *Runner) runOne(j job, pull postgres.PullRequest, repo postgres.Repo, d 
 		return err
 	})
 	if err != nil {
-		return review.Usage{}, err
+		return ir.usage, err
 	}
 
 	prompt := review.Prompt{System: a.SystemPrompt, Task: taskLine(pull)}
 	if pull.Body != nil {
 		prompt.PRDescription = *pull.Body
 	}
+	if ir.intent != nil {
+		prompt.Intent = ir.intent.PromptText()
+	}
 	if prompt.Skills, err = r.skills(ctx, a.ID, log); err != nil {
-		return review.Usage{}, err
+		return ir.usage, err
 	}
 	if !a.RepoIntel {
 		log.info("Repo intel disabled for this agent — skipping context enrichment")
@@ -225,16 +277,17 @@ func (r *Runner) runOne(j job, pull postgres.PullRequest, repo postgres.Repo, d 
 		SessionID: fmt.Sprintf("%s/%s#%d:%s", repo.Owner, repo.Name, pull.Number, a.Name),
 		OnEvent:   func(e review.Event) { log.event(string(e.Kind), e.Message) },
 	})
+	res.Usage = ir.usage.Plus(res.Usage)
 	if err != nil {
 		return res.Usage, err
 	}
-	return res.Usage, r.save(j, pull, res, log, time.Since(start))
+	return res.Usage, r.save(j, pull, res, log, time.Since(start), ir)
 }
 
 // save stores a finished review: the review and its findings, the run's
 // outcome and its trace, in one transaction, if the run is still running.
 // A run cancelled or deleted while its model answered keeps no review.
-func (r *Runner) save(j job, pull postgres.PullRequest, res review.Result, log *runLog, took time.Duration) error {
+func (r *Runner) save(j job, pull postgres.PullRequest, res review.Result, log *runLog, took time.Duration, ir intentResult) error {
 	// Not j.ctx: a cancel from now on is too late to stop the save.
 	ctx := r.ctx
 	a := j.agent
@@ -278,7 +331,7 @@ func (r *Runner) save(j job, pull postgres.PullRequest, res review.Result, log *
 			return err
 		}
 		// The trace's log ends here: the last line below is only live.
-		trace := r.successTrace(j, pull, res, took)
+		trace := r.successTrace(j, pull, res, took, ir)
 		log.info("Run complete" + costNote(res.Usage) + "; trace persisted")
 		return q.SaveTrace(ctx, postgres.SaveTraceParams{RunID: j.run, Trace: trace})
 	})
@@ -291,7 +344,7 @@ func (r *Runner) save(j job, pull postgres.PullRequest, res review.Result, log *
 
 // finishFailed records a run that failed or was cancelled, with what its
 // model calls took and its log so far, and ends its live log.
-func (r *Runner) finishFailed(j job, pull postgres.PullRequest, status, msg string, took time.Duration, spent review.Usage) {
+func (r *Runner) finishFailed(j job, pull postgres.PullRequest, status, msg string, took time.Duration, spent review.Usage, ir intentResult) {
 	// Saved even while the runner closes.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.ctx), 30*time.Second)
 	defer cancel()
@@ -310,7 +363,7 @@ func (r *Runner) finishFailed(j job, pull postgres.PullRequest, status, msg stri
 		r.log.Error("run usage not saved", "run", j.run, "err", err)
 	}
 	// A deleted run has no trace to save; that error is expected.
-	_ = r.q.SaveTrace(ctx, postgres.SaveTraceParams{RunID: j.run, Trace: r.failureTrace(j, pull, took, spent)})
+	_ = r.q.SaveTrace(ctx, postgres.SaveTraceParams{RunID: j.run, Trace: r.failureTrace(j, pull, took, spent, ir)})
 	r.bus.complete(j.run)
 }
 

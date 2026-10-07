@@ -110,15 +110,18 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		claude = claudecode.New(bin, os.Environ())
 		log.Info("anthropic reviews run through the claude CLI", "path", bin)
 	}
+	githubToken := func() (string, error) { return store.Get(secrets.GitHubToken) }
 	reviews := runner.New(runner.Config{
-		DB:        pool,
-		LLM:       reviewModel(store, modelAPIs, claude),
-		CloneDir:  cfg.cloneDir,
-		RepoIntel: cfg.repoIntel,
-		Log:       log,
+		DB:          pool,
+		LLM:         reviewModel(store, modelAPIs, claude),
+		IntentLLM:   intentModel(store, modelAPIs, claude),
+		GitHubToken: githubToken,
+		GitHubAPI:   github.DefaultURL,
+		CloneDir:    cfg.cloneDir,
+		RepoIntel:   cfg.repoIntel,
+		Log:         log,
 	})
 	defer reviews.Close() // after the server stops: the runs in progress end as failed
-	githubToken := func() (string, error) { return store.Get(secrets.GitHubToken) }
 	background := jobs.New(pool, log)
 	defer background.Close() // likewise for clones in progress
 	if n, err := reviews.FailStale(ctx); err != nil {
@@ -193,6 +196,35 @@ func reviewModel(store *secrets.Store, apis httpapi.ModelAPIs, claude *claudecod
 		}
 		return anthropic.New(apis.Anthropic, key), nil
 	}
+}
+
+// intentModel returns the model client for the intent feature's provider
+// and model (settings.feature_models.review_intent, or its default
+// anthropic/haiku). Unlike reviewModel, it refuses an "anthropic" choice
+// that names one of the Claude Code aliases when claude is nil: the review
+// engine's "anthropic" provider would otherwise be read as asking for the
+// Anthropic API (and its key), which isn't what the picker's model list
+// offered. Any other choice delegates to reviewModel.
+func intentModel(store *secrets.Store, apis httpapi.ModelAPIs, claude *claudecode.Client) runner.IntentLLMFor {
+	base := reviewModel(store, apis, claude)
+	return func(provider, model string) (review.LLM, error) {
+		if provider == "anthropic" && claude == nil && isClaudeCodeModel(model) {
+			return nil, fmt.Errorf("intent model `%s` needs ANTHROPIC_VIA_CLAUDE_CODE=true; pick another intent model in Settings", model)
+		}
+		return base(provider)
+	}
+}
+
+// isClaudeCodeModel reports whether model is one of the aliases the claude
+// CLI accepts (claudecode.Models), such as "haiku", the intent feature's
+// default.
+func isClaudeCodeModel(model string) bool {
+	for _, m := range claudecode.Models() {
+		if m.ID == model {
+			return true
+		}
+	}
+	return false
 }
 
 // config is the server's settings.

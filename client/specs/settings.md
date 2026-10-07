@@ -17,6 +17,11 @@ Two sections: `api-keys` and `models`.
 - The choice is saved to `settings.feature_models` (`PUT /settings`). An unset feature uses its
   registry default.
 - Most of these features arrive in later course lessons; the pickers exist already.
+- "PR Review · Intent" (`review_intent`) defaults to provider `anthropic`, model `haiku`
+  (served through the local Claude Code CLI, no API key), description "Classifies a PR's
+  intent and scope before every review (Claude Code · haiku by default)." Picking a model
+  from the list still saves `provider: "openrouter"` (`SettingsModels.tsx`); resetting to
+  `anthropic/haiku` from the UI isn't possible today — out of scope for this change.
 
 ## Relied on by e2e
 Flow 07 checks the section titles "API Keys" and "Feature Models".

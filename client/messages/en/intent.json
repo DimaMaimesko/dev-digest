@@ -1,0 +1,10 @@
+{
+  "title": "Intent",
+  "confidenceBadge": "Confidence: {level}",
+  "inScope": "In scope",
+  "outOfScope": "Out of scope",
+  "sources": "Sources",
+  "unresolved": "Unresolved references",
+  "truncated": "truncated",
+  "empty": "Intent is derived on the next review."
+}

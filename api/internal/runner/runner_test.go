@@ -50,6 +50,12 @@ type fakeLLM struct {
 }
 
 func (f *fakeLLM) CompleteJSON(ctx context.Context, req review.JSONRequest) (review.JSONResponse, error) {
+	if err := ctx.Err(); err != nil {
+		// A real HTTP-based client fails once its request's context is
+		// already done; model that here too, so a fake with no gate still
+		// reports a cancel or timeout instead of answering regardless.
+		return review.JSONResponse{}, err
+	}
 	f.mu.Lock()
 	f.requests = append(f.requests, req)
 	f.mu.Unlock()

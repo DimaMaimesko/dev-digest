@@ -145,3 +145,42 @@ func TestReviewModelClaudeCode(t *testing.T) {
 		t.Errorf("openai: err = %v, want the missing key", err)
 	}
 }
+
+// AC-17a: without the claude CLI wired, picking a Claude Code alias (such as
+// the intent feature's default, haiku) as the intent model fails with a
+// message naming the setting to change, instead of trying the Anthropic API
+// key reviewModel would otherwise fall through to.
+func TestIntentModelNeedsClaudeCode(t *testing.T) {
+	store := secrets.New(filepath.Join(t.TempDir(), "secrets.json"), func(string) string { return "" })
+	model := intentModel(store, httpapi.ModelAPIs{Anthropic: "http://anthropic.test"}, nil)
+
+	_, err := model("anthropic", "haiku")
+	wantErr := "intent model `haiku` needs ANTHROPIC_VIA_CLAUDE_CODE=true; pick another intent model in Settings"
+	if err == nil || err.Error() != wantErr {
+		t.Errorf("err = %v, want %q", err, wantErr)
+	}
+
+	// Any other Claude Code alias is refused the same way.
+	if _, err := model("anthropic", "opus"); err == nil || !strings.Contains(err.Error(), "needs ANTHROPIC_VIA_CLAUDE_CODE=true") {
+		t.Errorf("opus: err = %v", err)
+	}
+
+	// A non-Claude-Code choice (or any provider once claude is wired) falls
+	// through to reviewModel, unaffected.
+	if _, err := model("openai", "gpt-test"); err == nil || err.Error() != "OPENAI_API_KEY is not configured" {
+		t.Errorf("openai: err = %v, want the missing key", err)
+	}
+}
+
+// With the claude CLI wired, an "anthropic" intent model choice, Claude Code
+// alias or not, runs through it — the same as reviewModel.
+func TestIntentModelWithClaudeCode(t *testing.T) {
+	store := secrets.New(filepath.Join(t.TempDir(), "secrets.json"), func(string) string { return "" })
+	claude := claudecode.New("claude", nil)
+	model := intentModel(store, httpapi.ModelAPIs{Anthropic: "http://anthropic.test"}, claude)
+
+	llm, err := model("anthropic", "haiku")
+	if err != nil || llm != claude {
+		t.Errorf("anthropic/haiku: %v, %v, want the claude CLI client", llm, err)
+	}
+}

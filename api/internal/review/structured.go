@@ -121,6 +121,14 @@ func parseReview(text string) (Review, error) {
 	return r, nil
 }
 
+// JSONObject returns the JSON object in text, the same way parseReview reads
+// one out of a model's answer (prose or a ```json fence tolerated). It is
+// exported for internal/intent, which parses its own schema out of a model's
+// answer the same way.
+func JSONObject(text string) ([]byte, error) {
+	return jsonObject(text)
+}
+
 // jsonObject returns the JSON object in a model's answer. The answer is
 // usually pure JSON, but a model may wrap it in prose or a ```json fence, so
 // jsonObject decodes one value starting at the first "{". The decoder stops
