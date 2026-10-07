@@ -1,6 +1,6 @@
 {
-  "name": "PR detail Files changed tab renders the seeded diff",
-  "description": "From PR #482, open the Files changed tab and confirm the unified-diff viewer renders a seeded file path (src/config.ts). Exercises the refactored diff-viewer (DiffViewer → FileCard → CodeLine). Read-only seeded data (no model call). Assumes a freshly-seeded DB (see e2e/README.md).",
+  "name": "PR detail Files changed tab: Smart order groups, findings counter, Not in the diff, order switch",
+  "description": "From PR #482, open the Files changed tab and confirm Smart Diff: the 'Core logic' group header shows '4 files' and the seeded open-findings counter '2 files with open findings' (both seeded files, src/config.ts and src/api/users.ts, have no patch); the 'Not in the diff' section lists the seeded finding 'Hardcoded Stripe secret key in commit'; clicking 'Original order' flips the URL to ?order=original and still renders src/config.ts as a flat list. Exercises the refactored diff-viewer (DiffViewer -> FileCard -> CodeLine) plus the new DiffTab grouping/order-switch wiring. Read-only seeded data (no model call, no Accept/Dismiss). Assumes a freshly-seeded DB (see e2e/README.md).",
   "steps": [
     { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
     { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
@@ -9,6 +9,14 @@
     { "cmd": ["wait", "--load", "networkidle"], "label": "PR detail data settles" },
     { "cmd": ["find", "role", "button", "click", "--name", "Files changed"], "label": "switch to the Files changed tab" },
     { "cmd": ["wait", "--url", "tab=diff"], "label": "diff tab is active in the URL" },
-    { "cmd": ["wait", "--text", "src/config.ts"], "label": "a seeded changed file renders in the diff viewer" }
+    { "cmd": ["wait", "--text", "Core logic"], "label": "the Core logic group header renders (Smart order default)" },
+    { "cmd": ["wait", "--text", "4 files"], "label": "the Core logic group shows the listed file count" },
+    { "cmd": ["wait", "--text", "src/config.ts"], "label": "a seeded changed file renders in the diff viewer" },
+    { "cmd": ["find", "role", "img", "text", "--name", "2 files with open findings"], "label": "the Core logic group's open-findings counter has its accessible name (non-mutating read)" },
+    { "cmd": ["wait", "--text", "NOT IN THE DIFF"], "label": "the Not in the diff section renders for the seeded no-patch files (CSS uppercases the heading, so rendered text is all-caps)" },
+    { "cmd": ["wait", "--text", "Hardcoded Stripe secret key in commit"], "label": "the seeded finding is listed in Not in the diff" },
+    { "cmd": ["find", "role", "button", "click", "--name", "Original order"], "label": "switch to Original order" },
+    { "cmd": ["wait", "--url", "order=original"], "label": "the order switch is reflected in the URL" },
+    { "cmd": ["wait", "--text", "src/config.ts"], "label": "the seeded file still renders as a flat list in Original order" }
   ]
 }

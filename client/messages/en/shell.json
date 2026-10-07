@@ -40,6 +40,11 @@
     "reply": "Reply",
     "viewOnGitHub": "View on GitHub",
     "postedToGitHub": "Posts to GitHub immediately",
-    "outdatedTitle": "{count} comment(s) on older revisions"
+    "outdatedTitle": "{count} comment(s) on older revisions",
+    "notInDiff": "Not in the diff",
+    "hasOpenFindings": "has open findings",
+    "severityBlocker": "blocker",
+    "severityWarning": "warning",
+    "severitySuggestion": "suggestion"
   }
 }
