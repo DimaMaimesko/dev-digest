@@ -33,6 +33,10 @@ must hold. The details of each step are in `api/specs/`.
   (the grounding gate) and listed as dropped in the run trace.
 - With repo-intel on, the prompt includes the repository map and the callers of the changed
   symbols. → `api/specs/review-run.md`
+- Before the agents' own calls, the pull request's intent — why it exists, what's in scope and
+  what's out of scope — is derived **at most once per request** (reused, at no cost, when
+  nothing the PR says has changed since) and given to every agent in the prompt. The Overview
+  tab and the run trace show it. → `api/specs/review-run.md`, `specs/intent-layer.md`
 
 ## 5. Act on findings
 - The user accepts or dismisses each finding; a new decision replaces the previous one.

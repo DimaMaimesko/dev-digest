@@ -11,15 +11,15 @@ func TestNew(t *testing.T) {
 	ctx := context.Background()
 	a, b := pgtest.New(t), pgtest.New(t)
 
-	// Every migration ran: the last one (0011) added skills_ws_name_uq.
-	var hasIndex bool
-	err := a.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM pg_indexes
-		WHERE tablename = 'skills' AND indexname = 'skills_ws_name_uq')`).Scan(&hasIndex)
+	// Every migration ran: the last one (0012) added pr_intent.fingerprint.
+	var hasColumn bool
+	err := a.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
+		WHERE table_name = 'pr_intent' AND column_name = 'fingerprint')`).Scan(&hasColumn)
 	if err != nil {
 		t.Fatalf("query schema: %v", err)
 	}
-	if !hasIndex {
-		t.Error("skills_ws_name_uq is missing; migration 0011 should have added it")
+	if !hasColumn {
+		t.Error("pr_intent.fingerprint is missing; migration 0012 should have added it")
 	}
 
 	// The two databases are separate.

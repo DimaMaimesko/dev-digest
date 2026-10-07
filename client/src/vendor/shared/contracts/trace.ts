@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { IntentConfidence, IntentSource, IntentUnresolved } from './brief.js';
 
 /**
  * Run trace. The ENTIRE trace of one run is persisted as a SINGLE
@@ -47,9 +48,23 @@ export const PromptAssembly = z.object({
   repo_map: z.string().nullish(),
   /** PR author's description/body (truncated); null when absent. */
   pr_description: z.string().nullish(),
+  /** The `## PR intent` untrusted section sent to the model; null/absent when there was no intent. */
+  intent: z.string().nullish(),
   user: z.string(),
 });
 export type PromptAssembly = z.infer<typeof PromptAssembly>;
+
+/** The intent a run used (or didn't), surfaced in the run trace. */
+export const RunIntent = z.object({
+  status: z.enum(['derived', 'reused', 'failed']),
+  reason: z.string().nullable(),
+  confidence: IntentConfidence.nullable(),
+  sources: z.array(IntentSource),
+  unresolved: z.array(IntentUnresolved),
+  provider: z.string().nullable(),
+  model: z.string().nullable(),
+});
+export type RunIntent = z.infer<typeof RunIntent>;
 
 export const MemoryPulled = z.object({
   pr: z.number().int().nullish(),
@@ -86,6 +101,8 @@ export const RunTrace = z.object({
   memory_pulled: z.array(MemoryPulled),
   specs_read: z.array(z.string()),
   log: z.array(RunLogLine),
+  /** The intent the run used, or didn't; absent/null on traces saved before this feature. */
+  intent: RunIntent.nullish(),
 });
 export type RunTrace = z.infer<typeof RunTrace>;
 

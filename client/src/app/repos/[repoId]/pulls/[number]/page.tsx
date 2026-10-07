@@ -53,8 +53,11 @@ export default function PRDetailPage() {
   };
   // When a run settles (done OR failed) refresh the full run history too, so a
   // just-failed run shows up in "Run history" immediately — no page reload.
+  // The settled run may also have derived or reused the PR's intent, so the
+  // Overview tab's Intent panel refreshes alongside it.
   const invalidateRunHistory = () => {
     if (prId) qc.invalidateQueries({ queryKey: ["pr-runs", prId] });
+    if (prId) qc.invalidateQueries({ queryKey: ["pr-intent", prId] });
   };
 
   const tab = search.get("tab") ?? "overview";
@@ -134,7 +137,7 @@ export default function PRDetailPage() {
       />
 
       <div style={{ padding: "24px 32px 44px", display: "flex", flexDirection: "column", gap: 24, maxWidth: 1080, margin: "0 auto" }}>
-        {tab === "overview" && <OverviewTab prBody={pr.body} />}
+        {tab === "overview" && <OverviewTab prId={prId} prBody={pr.body} />}
 
         {tab === "findings" && (
           <FindingsTab

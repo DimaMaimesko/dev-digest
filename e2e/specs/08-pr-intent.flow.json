@@ -1,0 +1,15 @@
+{
+  "name": "PR Overview shows the seeded intent",
+  "description": "From PR #482, confirm the Intent panel on the Overview tab renders the seeded intent: the panel title, the medium confidence badge, the statement text and the out-of-scope list. Read-only seeded data (no model call). Assumes a freshly-seeded DB where acme/payments-api (PR #482) is the first repo — guaranteed by e2e-web.yml; run locally via the hermetic stack (see e2e/README.md).",
+  "steps": [
+    { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
+    { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
+    { "cmd": ["find", "text", "Add rate limiting to public API endpoints", "click"], "label": "open the PR row" },
+    { "cmd": ["wait", "--url", "/pulls/482"], "label": "navigate to the PR detail route" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "PR detail data settles" },
+    { "cmd": ["wait", "--text", "Intent"], "label": "Intent panel title is visible" },
+    { "cmd": ["wait", "--text", "Confidence: medium"], "label": "seeded intent's confidence badge renders" },
+    { "cmd": ["wait", "--text", "per-client rate limiting"], "label": "seeded intent statement text renders" },
+    { "cmd": ["wait", "--text", "Out of scope"], "label": "Out of scope section renders" }
+  ]
+}

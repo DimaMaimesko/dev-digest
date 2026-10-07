@@ -17,6 +17,7 @@ the flow fails, even though the e2e folder didn't change.
 | 05 diff | PR #482's file `src/config.ts` | tab button "Files changed" (`PrDetailHeader.tsx`) | `?tab=diff` |
 | 06 onboarding | — | "Add a repository", "Repository URL" (hardcoded in `AddRepoView.tsx`) | `/onboarding` |
 | 07 settings | — | "API Keys", "Feature Models" (`messages/en/settings.json`) | `/settings/api-keys`, `/settings/models` |
+| 08 pr intent | PR #482's seeded intent in `seed.go` `demo()` (confidence `medium`, statement "…per-client rate limiting…", out-of-scope items) | the Intent panel's fixed copy — "Intent", "Confidence: {level}", "Out of scope" (`messages/en/intent.json`) | `/pulls/482`, Overview tab (default) |
 
 So:
 - Changing the seed's demo data → run the suite.

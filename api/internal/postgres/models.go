@@ -64,6 +64,24 @@ type Finding struct {
 	DismissedAt        *time.Time
 }
 
+type PrIntent struct {
+	PrID        uuid.UUID
+	Intent      string
+	InScope     []byte
+	OutOfScope  []byte
+	Confidence  string
+	Sources     []byte
+	Unresolved  []byte
+	HeadSha     *string
+	Fingerprint *string
+	Provider    *string
+	Model       *string
+	TokensIn    *int32
+	TokensOut   *int32
+	CostUsd     *float64
+	DerivedAt   time.Time
+}
+
 type PullRequest struct {
 	ID              uuid.UUID
 	WorkspaceID     uuid.UUID

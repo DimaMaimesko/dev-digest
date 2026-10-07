@@ -160,6 +160,33 @@ func TestRunMapReduce(t *testing.T) {
 	}
 }
 
+// The intent, when set, is untrusted context like the PR description: every
+// per-file call of a map-reduce run must see it, not only the first.
+func TestRunMapReduceSendsIntentToEveryCall(t *testing.T) {
+	llm := &scriptedLLM{reply: always(answer(t, review.VerdictApprove, "ok", 95))}
+
+	res, err := review.Run(context.Background(), llm, review.Input{
+		Model:    "m",
+		Prompt:   review.Prompt{System: "sys", Intent: "Confidence: low\nIntent: do the thing."},
+		Diff:     parse(t, sample),
+		Strategy: review.StrategyMapReduce,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(llm.reqs) != 2 {
+		t.Fatalf("made %d calls, want 2 (one per file)", len(llm.reqs))
+	}
+	for i, req := range llm.reqs {
+		if !strings.Contains(userMessage(req), "<untrusted source=\"pr-intent\">\nConfidence: low\nIntent: do the thing.\n</untrusted>") {
+			t.Errorf("call %d is missing the intent section:\n%s", i, userMessage(req))
+		}
+	}
+	if !strings.Contains(res.Assembly.User, "pr-intent") {
+		t.Error("Assembly should hold the intent section for the whole diff")
+	}
+}
+
 // Each file's call only sees that file. A finding it reports about another
 // file is dropped, even on a line the whole diff shows: the model made it up.
 func TestRunMapReduceDropsFindingsAboutOtherFiles(t *testing.T) {
