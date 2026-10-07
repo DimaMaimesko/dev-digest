@@ -14,7 +14,7 @@ the flow fails, even though the e2e folder didn't change.
 | 02 PR detail | `acme/payments-api` is the **first** repo; PR #482 "Add rate limiting to public API endpoints"; its seeded run's cost `$0.0021` (`demoCost`) | the cost as `formatCost` writes it (`client/src/lib/format-cost.ts`) | `/pulls/482` |
 | 03 agents | agent "Security Reviewer" | — | `/agents` |
 | 04 findings | PR #482's review: verdict `request_changes`, 2 findings, one "Hardcoded Stripe secret key in commit"; the seeded run it came from, cost `$0.0021`, with a trace | tab button "Agent runs" (hardcoded in `PrDetailHeader.tsx`); the verdict shown as `verdict.replace("_", " ")` and "N findings", both in `ReviewRunAccordion.tsx`; the trace button's label "Open run trace & logs" and the "COST" stat (`messages/en/prReview.json`, `runs.json`) | `?tab=findings`; the newest run's accordion open by default; `?trace=` |
-| 05 diff | PR #482's file `src/config.ts` | tab button "Files changed" (`PrDetailHeader.tsx`) | `?tab=diff` |
+| 05 diff | PR #482's files `src/config.ts`, `src/api/users.ts` (no patch text), with two open findings ("Hardcoded Stripe secret key in commit" among them) — Smart Diff puts both in "Core logic" ("4 files") since neither path matches a classification rule, and their findings land in "Not in the diff" (no patch to anchor to) | tab button "Files changed" (`PrDetailHeader.tsx`); group label "Core logic" and "N files" plural, the counter's accessible name "{n} files with open findings", "Not in the diff" section title, order-switch buttons "Smart order"/"Original order" (all `messages/en/smartDiff.json`) | `?tab=diff`; the order switch sets `?order=original` (no param = Smart, the default) |
 | 06 onboarding | — | "Add a repository", "Repository URL" (hardcoded in `AddRepoView.tsx`) | `/onboarding` |
 | 07 settings | — | "API Keys", "Feature Models" (`messages/en/settings.json`) | `/settings/api-keys`, `/settings/models` |
 | 08 pr intent | PR #482's seeded intent in `seed.go` `demo()` (confidence `medium`, statement "…per-client rate limiting…", out-of-scope items) | the Intent panel's fixed copy — "Intent", "Confidence: {level}", "Out of scope" (`messages/en/intent.json`) | `/pulls/482`, Overview tab (default) |
@@ -22,6 +22,10 @@ the flow fails, even though the e2e folder didn't change.
 So:
 - Changing the seed's demo data → run the suite.
 - Renaming a tab, a title or the verdict label in the client → grep `specs/` for the old text.
+- `wait --text` matches the browser's *rendered* text, so a heading styled with CSS
+  `text-transform: uppercase` (e.g. the diff viewer's "Not in the diff" section, `styles.ts`
+  `notInDiffTitle`) renders as `NOT IN THE DIFF`; flow 05 waits for the all-caps form, not the
+  `messages/en/shell.json` string's mixed case.
 - Moving tab state out of the URL breaks 04 and 05 (`wait --url tab=…`).
 
 ## Adding a flow

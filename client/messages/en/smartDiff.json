@@ -1,0 +1,32 @@
+{
+  "header": "Files changed · {count, plural, =1 {# file} other {# files}} · +{adds} −{dels}",
+  "headerPartial": "Files changed · {count} of {total} files · +{adds} −{dels}",
+  "filesCount": "{count, plural, =1 {# file} other {# files}}",
+  "openFindingsCounter": "{count, plural, =1 {# file with open findings} other {# files with open findings}}",
+  "order": {
+    "smart": "Smart order",
+    "original": "Original order"
+  },
+  "roles": {
+    "core": {
+      "label": "Core logic",
+      "description": "The substance of the change — review closely"
+    },
+    "tests": {
+      "label": "Tests",
+      "description": "Checks the change — read with the core"
+    },
+    "wiring": {
+      "label": "Wiring",
+      "description": "Hooks the core into the app"
+    },
+    "docs": {
+      "label": "Docs",
+      "description": "Explains the change — skim"
+    },
+    "boilerplate": {
+      "label": "Boilerplate",
+      "description": "Generated / mechanical — skim"
+    }
+  }
+}

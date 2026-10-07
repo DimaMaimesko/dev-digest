@@ -14,6 +14,12 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
+## 2026-10-08 · context · PR files, commits and comments are one GitHub page (max 100)
+Cause: the GitHub client fetches `/pulls/{n}/files|commits|comments?per_page=100` once, no paging
+Rule: never treat the served file list as complete; `files_count` can exceed it. Paging is an api/ change
+Evidence: api/internal/github/github.go:196, :222, :288; Smart Diff header uses the listed count
+Promoted: no
+
 ## 2026-10-06 · context · `claude -p` flags that silently break the claudecode adapter
 Symptom: a run on the Pro subscription fails or ignores the schema, or each call costs ~20k input tokens.
 Cause: `--json-schema` answers through an extra tool turn; `--bare` reads only ANTHROPIC_API_KEY, never the OAuth login; the CLI's default system prompt is ~20k tokens.

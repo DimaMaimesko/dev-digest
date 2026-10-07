@@ -64,6 +64,44 @@ export const s = {
     color: "var(--text-primary)",
     paddingRight: 12,
   } satisfies CSSProperties,
+  openFindingsDot: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    width: 8,
+    height: 8,
+    borderRadius: "50%",
+    flexShrink: 0,
+  } satisfies CSSProperties,
+  severityLabel: {
+    flexShrink: 0,
+    fontSize: 11,
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+    paddingLeft: 10,
+  } satisfies CSSProperties,
+  findingsWrap: {
+    margin: "4px 14px 8px 58px",
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  } satisfies CSSProperties,
+  notInDiffWrap: {
+    borderTop: "1px solid var(--border)",
+    margin: "4px 14px 4px 14px",
+    paddingTop: 10,
+    display: "flex",
+    flexDirection: "column",
+    gap: 8,
+  } satisfies CSSProperties,
+  notInDiffTitle: {
+    fontSize: 11,
+    fontWeight: 700,
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+    color: "var(--text-muted)",
+  } satisfies CSSProperties,
 } as const;
 
 /** Chevron rotates 90deg when the file card is open. */
@@ -75,10 +113,18 @@ export function chevronFor(open: boolean): CSSProperties {
   };
 }
 
-/** Row background per line kind (add/del tinted, others transparent). */
-export function lineRowFor(kind: Line["kind"]): CSSProperties {
+/** Row background per line kind (add/del tinted, others transparent), plus an
+    optional left stripe in a finding's severity color (AC-16). */
+export function lineRowFor(kind: Line["kind"], stripeColor?: string): CSSProperties {
   const background = kind === "add" ? "var(--code-add)" : kind === "del" ? "var(--code-del)" : "transparent";
-  return { display: "flex", alignItems: "stretch", fontSize: 13, lineHeight: "20px", background };
+  return {
+    display: "flex",
+    alignItems: "stretch",
+    fontSize: 13,
+    lineHeight: "20px",
+    background,
+    borderLeft: stripeColor ? `3px solid ${stripeColor}` : "3px solid transparent",
+  };
 }
 
 /** Gutter sign colour per line kind. */

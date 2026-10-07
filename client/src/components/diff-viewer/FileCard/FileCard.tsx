@@ -6,7 +6,7 @@ import React from "react";
 import { useTranslations } from "next-intl";
 import { Icon } from "@devdigest/ui";
 import type { PrFile } from "@/lib/types";
-import { AUTO_EXPAND_MAX_LINES } from "../constants";
+import { AUTO_EXPAND_MAX_LINES, OPEN_FINDINGS_DOT_COLOR } from "../constants";
 import { parsePatch, type Line } from "../helpers";
 import {
   buildThreads,
@@ -15,6 +15,7 @@ import {
   type CommentThread,
   type DiffCommentApi,
 } from "../comments";
+import { isOpen, placeFindings, pathsWithOpenFindings, type DiffFindingApi } from "../findings";
 import { s, chevronFor } from "../styles";
 import { CodeLine } from "../CodeLine";
 import { OutdatedComments } from "../OutdatedComments";
@@ -30,12 +31,31 @@ function threadsForLine(ln: Line, matched: Map<string, CommentThread[]>): Commen
   return out;
 }
 
-export function FileCard({ file, commenting }: { file: PrFile; commenting?: DiffCommentApi }) {
+export function FileCard({
+  file,
+  commenting,
+  findings,
+}: {
+  file: PrFile;
+  commenting?: DiffCommentApi;
+  findings?: DiffFindingApi;
+}) {
   const t = useTranslations("shell");
   const [open, setOpen] = React.useState(
     (file.additions ?? 0) + (file.deletions ?? 0) <= AUTO_EXPAND_MAX_LINES
   );
   const lines = React.useMemo(() => parsePatch(file.patch), [file.patch]);
+
+  // This file's shown findings, placed against the parsed patch lines.
+  const fileFindings = React.useMemo(
+    () => (findings ? findings.findings.filter((f) => f.file === file.path) : []),
+    [findings, file.path]
+  );
+  const placed = React.useMemo(() => placeFindings(lines, fileFindings), [lines, fileFindings]);
+  const hasOpenFinding = React.useMemo(
+    () => pathsWithOpenFindings(fileFindings).has(file.path),
+    [fileFindings, file.path]
+  );
 
   // Group this file's comments into threads, then split into ones we can anchor
   // to a rendered line vs. "outdated" (GitHub dropped the line / it's not here).
@@ -60,6 +80,14 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
         <span className="mono" style={s.filePath}>
           {file.path}
         </span>
+        {hasOpenFinding && (
+          <span
+            role="img"
+            aria-label={t("diffViewer.hasOpenFindings")}
+            title={t("diffViewer.hasOpenFindings")}
+            style={{ ...s.openFindingsDot, background: OPEN_FINDINGS_DOT_COLOR }}
+          />
+        )}
         <span className="mono tnum" style={s.fileStat}>
           <span style={s.addText}>+{file.additions}</span>{" "}
           <span style={s.delText}>−{file.deletions}</span>
@@ -85,10 +113,22 @@ export function FileCard({ file, commenting }: { file: PrFile; commenting?: Diff
                 path={file.path}
                 threads={threadsForLine(ln, matched)}
                 commenting={commenting}
+                findingsHere={placed.byLine.get(i)}
+                stripeSeverity={placed.stripe.get(i)}
+                labelSeverity={placed.label.get(i)}
+                renderFinding={findings?.renderFinding}
               />
             ))
           )}
           {commenting && commenting.showComments && <OutdatedComments threads={outdated} />}
+          {findings && placed.notInDiff.length > 0 && (
+            <div style={s.notInDiffWrap}>
+              <div style={s.notInDiffTitle}>{t("diffViewer.notInDiff")}</div>
+              {placed.notInDiff.map((f) => (
+                <React.Fragment key={f.id}>{findings.renderFinding(f)}</React.Fragment>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
