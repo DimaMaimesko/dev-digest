@@ -13,7 +13,8 @@ import { RepoNotFound } from "@/components/repo-not-found";
 import { PrDetailHeader } from "./_components/PrDetailHeader";
 import { OverviewTab } from "./_components/OverviewTab";
 import { FindingsTab } from "./_components/FindingsTab";
-import { DiffTab } from "./_components/DiffTab";
+import { DiffTab, type DiffOrder } from "./_components/DiffTab";
+import { nextTabAfterRunStart } from "./_components/DiffTab/helpers";
 import RunTraceDrawer from "./_components/RunTraceDrawer";
 import { usePullDetail, usePulls } from "../../../../../lib/hooks";
 import { useQueryClient } from "@tanstack/react-query";
@@ -59,9 +60,22 @@ export default function PRDetailPage() {
     if (prId) qc.invalidateQueries({ queryKey: ["pr-runs", prId] });
     if (prId) qc.invalidateQueries({ queryKey: ["pr-intent", prId] });
   };
+  // A settled run (done or failed) refreshes active runs, run history and the
+  // reviews list — shared by both the Agent runs and Files changed tabs so a
+  // run started from either updates its counters/findings without a reload
+  // (AC-13, AC-29).
+  const handleRunDone = () => {
+    invalidateActiveRuns();
+    invalidateRunHistory();
+    refetchReviews();
+  };
 
   const tab = search.get("tab") ?? "overview";
   const traceRunId = search.get("trace");
+  // Files changed's order defaults to Smart; only `?order=original` switches
+  // it, so the choice is part of the page address and survives a reload
+  // (AC-23).
+  const order: DiffOrder = search.get("order") === "original" ? "original" : "smart";
   const setParam = (key: string, val: string | null) => {
     const sp = new URLSearchParams(search.toString());
     if (val == null) sp.delete(key);
@@ -69,6 +83,7 @@ export default function PRDetailPage() {
     router.replace(`/repos/${repoId}/pulls/${number}${sp.toString() ? `?${sp.toString()}` : ""}`);
   };
   const setTab = (t: string) => setParam("tab", t);
+  const setOrder = (o: DiffOrder) => setParam("order", o === "original" ? "original" : null);
 
   // Reviews come newest-first; each is its own run (grouped into accordions).
   const runs = reviews ?? [];
@@ -132,7 +147,7 @@ export default function PRDetailPage() {
         findingsCount={findingsCount}
         githubUrl={repoFullName ? githubPrUrl(repoFullName, pr.number) : null}
         onSetTab={setTab}
-        onRunStart={() => setTab("findings")}
+        onRunStart={() => setTab(nextTabAfterRunStart(tab))}
         onRunsStarted={() => invalidateActiveRuns()}
       />
 
@@ -156,20 +171,23 @@ export default function PRDetailPage() {
               if (window.confirm("Delete this run from history? (its logs are removed too)"))
                 deleteRun.mutate(id);
             }}
-            onRunDone={() => {
-              invalidateActiveRuns();
-              invalidateRunHistory();
-              refetchReviews();
-            }}
+            onRunDone={handleRunDone}
           />
         )}
 
         {tab === "diff" && (
           <DiffTab
             prId={prId}
-            filesCount={pr.files_count}
             files={pr.files}
+            totalFiles={pr.files_count}
             canComment={pr.status === "open"}
+            reviews={runs}
+            liveRunIds={liveRunIds}
+            onRunDone={handleRunDone}
+            order={order}
+            onSetOrder={setOrder}
+            repoFullName={repoFullName}
+            headSha={pr.head_sha}
           />
         )}
       </div>

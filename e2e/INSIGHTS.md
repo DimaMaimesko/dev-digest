@@ -14,6 +14,12 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
+## 2026-10-08 · context · Seeded PR #482 has no patch text and an agent-less review
+Cause: api/internal/seed/seed.go:161 stores files without patches and the review with agent_id NULL
+Rule: an e2e flow can't assert a finding under a code line or per-agent grouping; assert findings in "Not in the diff", unit-test line anchoring
+Evidence: e2e/specs/05-pr-diff.flow.json; plans/smart-diff.md (Q3, Q4)
+Promoted: no
+
 ## 2026-09-30 · mistake · Flows 02/04/05 land on the wrong repository
 Symptom: the PR row "Add rate limiting…" never appears.
 Cause: `/` redirects to the *first* repo; a dev DB with other imported repos lands elsewhere.
