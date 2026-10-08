@@ -1,6 +1,6 @@
 # Spec — Onboarding Generator (Onboarding Tour)
-Status: draft
-Changes: api/specs/http-api.md (new repo-scoped tour routes), api/specs/repos-jobs.md (a new background job kind), specs/review-flow.md (the "no step needs an LLM key except running a review" invariant, and a new step), client/docs/route-map.md and a new client screen spec for the tour page; e2e coverage of the tour page (a new flow)
+Status: approved
+Changes: api/specs/http-api.md (new repo-scoped tour routes), api/specs/repos-jobs.md (a new background job kind), specs/review-flow.md (the "no step needs an LLM key except running a review" invariant, and a new step), client/docs/route-map.md and a new client screen spec for the tour page; the api seed (a demo tour for acme/payments-api); e2e flow 09 (seeded tour, read-only)
 
 ## Problem & Motivation
 A developer who opens an unfamiliar repository in DevDigest today sees only its pull requests.
@@ -44,7 +44,10 @@ spec's behavior wins and the contract changes with the API.
 - A file viewer inside DevDigest. "Open" opens the file on GitHub at the tour's commit (AC-30).
 - Generating tours automatically (after clone, refresh or resync). Generation is always a user
   action, because it costs money.
-- Regenerating a single section on its own. [NEEDS CLARIFICATION: Q6]
+- Regenerating a single section on its own (the whole tour only, for now).
+- Cancelling a generation in progress (no cancel in v1).
+- Flagging or filtering individual risky commands; the fixed "review before running" note (AC-27)
+  is the only warning.
 - Editing the tour by hand, or keeping a history of earlier tours (only the latest is kept).
 - Extending the code indexer to new languages. The tour works with whatever the index holds.
 - "Project Context" and the other sidebar items shown in the mockups (Conventions, Eval
@@ -79,10 +82,15 @@ spec's behavior wins and the contract changes with the API.
   I'm told when it's stale so I can regenerate it. → AC-12, AC-13, AC-14, AC-31
 - **US-10** As a user paying for model calls, I see what a generation cost, I can't start two at
   once by double-clicking, and generation is refused up front when no key is configured.
-  → AC-6, AC-32, AC-33, AC-34
+  → AC-6, AC-32, AC-33, AC-34, AC-48
 - **US-11** As a user, I'm told plainly when a tour can't be generated (repository not cloned or
   not indexed yet, indexing in progress, every section failed) and nothing I already had is lost.
-  → AC-3, AC-4, AC-11, AC-35, AC-36, AC-37
+  → AC-3, AC-4, AC-11, AC-35, AC-36, AC-37, AC-43
+- **US-12** As a user, I can trust that generation never sends my secrets to the provider, reads
+  only a small, known set of files, and stays bounded in input size and time. → AC-44, AC-45,
+  AC-46, AC-47, AC-39
+- **US-13** As someone trying DevDigest without a model key (and the e2e flows), I can open the
+  seeded demo repository's tour and read all five sections. → AC-49
 
 ## Acceptance criteria (EARS)
 
@@ -169,7 +177,8 @@ spec's behavior wins and the contract changes with the API.
   text to the clipboard and confirm it ("Copied"); copying shall be its only effect.
 - **AC-27** The system shall never execute, schedule or pass to a shell any command from How to run
   locally, and the section shall carry the note "Generated from repository files — review before
-  running." *Verify: no process is spawned and no file in the clone changes during or after
+  running." This note shall be the only warning: individual commands are not flagged or
+  filtered. *Verify: no process is spawned and no file in the clone changes during or after
   generation.*
 - **AC-28** Guided reading path shall list 3 to 12 numbered entries, each a grounded path and a
   reason of at most 140 characters, in the order the model gave.
@@ -204,9 +213,40 @@ spec's behavior wins and the contract changes with the API.
   tour unchanged (if any) and show "Generation failed" with the reasons.
 - **AC-37** WHEN a repository is deleted, the system shall delete its tour, and a generation in
   progress for it shall store nothing.
-- **AC-39** IF a section's model call does not return a valid answer within its time limit or after
-  2 repair retries, THEN the system shall mark that section failed with the reason ("timed out
-  after <d>", "model gave no valid answer in 3 attempts", or the provider's error).
+- **AC-39** IF a section does not get a valid answer within 90 seconds (repair retries included) or
+  after 2 repair retries, THEN the system shall mark that section failed with the reason ("timed
+  out after 90s", "model gave no valid answer in 3 attempts", or the provider's error).
+- **AC-47** The system shall generate the five sections in parallel, and the whole generation shall
+  finish within the existing 2-minute background-job limit; IF that limit is reached, THEN every
+  section not yet done shall be marked failed ("timed out").
+- **AC-48** WHEN the user clicks "Regenerate" WHILE the stored tour is not stale, the system shall
+  ask for confirmation, showing the last generation's cost in the run-cost format, and start
+  nothing unless confirmed; WHILE the tour is stale, "Regenerate" shall start without asking.
+- **AC-49** The seed data shall include a tour for the demo repository `acme/payments-api` with all
+  five sections done, so the tour page renders it without any model key.
+  *Verify: e2e flow 09 opens the seeded tour read-only and checks the header and the five section
+  headings, without clicking Regenerate.*
+
+### Repository input
+- **AC-43** WHERE the repository's index completed but holds no code files (no TypeScript or
+  JavaScript), the system shall still allow generation, building the tour from the file tree, the
+  allowlisted documents and manifests, and the TODO/FIXME comments, and the tour page header shall
+  say "Code index is empty".
+- **AC-44** The system shall never send to the model the contents of any file matching: `.env` and
+  `.env.*` (except names ending in `.example`, `.sample` or `.template`); `*.pem`, `*.key`,
+  `*.p12`, `*.pfx`, `*.jks`, `*.keystore`, `*.kdbx`; `id_rsa*`, `id_dsa*`, `id_ecdsa*`,
+  `id_ed25519*`; `.npmrc`, `.pypirc`, `.netrc`, `.git-credentials`, `*.tfvars`, `*.tfstate*`;
+  anything under a `.ssh/` or `.aws/` directory; and any file whose name contains `secret`,
+  `credential` or `serviceaccount` in any letter case. This exclusion wins over the allowlist
+  (AC-45). *Verify: a repository with `.env`, `config/prod.pem` and `my-Secrets.json` containing
+  marker strings sends none of the markers in any prompt.*
+- **AC-45** The system shall send file contents to the model only from an allowlist — README,
+  CONTRIBUTING, package/build manifests, Makefile, Dockerfile, compose files, `.env.example` and
+  similar — found at a depth of at most 2 directories below the repository root, at most 20 files
+  per generation. Other files contribute only their paths (the file tree) and, for TODO/FIXME
+  comments, the comment line itself.
+- **AC-46** The system shall send at most 48,000 characters of repository input in any one model
+  call, cutting between characters, never inside one.
 
 ```mermaid
 stateDiagram-v2
@@ -224,8 +264,7 @@ stateDiagram-v2
 - **Repository not indexed yet / indexing in progress / index failed** — AC-3, AC-4.
 - **Index has no code files** (e.g. a Go-only repository: the indexer reads TypeScript/JavaScript
   only, so the repository map and ranks are empty) — generation still uses the file tree and
-  manifest/README files; the header says the code index is empty.
-  [NEEDS CLARIFICATION: Q5 — allow, or refuse?]
+  allowlisted documents and manifests; the header says "Code index is empty" (AC-43).
 - **Huge repository** — the index stops at 5,000 files and may be partial (AC-31). The model's input
   is bounded regardless of repository size (see Non-functional); the header shows the indexed
   count, not the total file count.
@@ -240,10 +279,10 @@ stateDiagram-v2
 - **Model output tries to inject markup or links** (HTML, Markdown links, `javascript:` URLs) — all
   text renders as plain text; the only link built is "Open" from a grounded path (AC-30).
 - **A command is dangerous** (`rm -rf`, `curl … | sh`) — it is still only shown and copyable
-  (AC-27); DevDigest does not judge or filter commands beyond length.
-  [NEEDS CLARIFICATION: Q7 — flag risky commands visually?]
+  (AC-27); DevDigest does not flag, judge or filter commands beyond length. The fixed note is the
+  only warning.
 - **Repository contains committed secrets** — files that hold secrets are never sent to the model
-  (see Non-functional › Security).
+  (AC-44).
 - **Provider reports no cost** — "—" (AC-32).
 - **Seeded demo repository has no clone** — it has a seeded tour so the page and e2e work without a
   key; Regenerate on it fails with `repo_not_indexed` (AC-4).
@@ -255,19 +294,17 @@ stateDiagram-v2
   is wrapped as untrusted data, the same way PR text is wrapped for reviews, and the model is told
   it is data, never instructions. The model has no tools and its answer can trigger no action
   other than being stored and displayed.
-- **Security — secrets.** The system shall never send to the model the contents of `.env` files
-  (other than `.env.example`/`.env.sample`/`.env.template`), private keys, or files whose names
-  mark them as credentials. [NEEDS CLARIFICATION: Q8 — exact exclusion list]
+- **Security — secrets.** Secret-bearing files are never sent to the model (AC-44), and file
+  contents come only from a small allowlist (AC-45).
 - **Security — rendering.** All model-written text renders as plain text: no Markdown, no HTML, no
   links or images built from model output except AC-30.
 - **Security — network.** Generation makes outbound calls only to the chosen LLM provider; it never
   fetches a URL found in repository content or model output.
 - **Cost.** At most 5 model calls per generation, plus at most 2 repair retries each (≤ 15 calls).
-  Each call's repository input is capped at a fixed token budget.
-  [NEEDS CLARIFICATION: Q9 — budget value]
-- **Performance.** Each section's model call has a time limit, and a generation never holds a
-  background-job slot past the job time limit (today 2 minutes per job).
-  [NEEDS CLARIFICATION: Q9 — time limits]
+  Each call's repository input is at most 48,000 characters (AC-46). A fresh tour asks before
+  regenerating, showing the last cost (AC-48).
+- **Performance.** Sections run in parallel, each within 90 seconds including retries (AC-39), and
+  a generation finishes within the 2-minute background-job limit (AC-47).
 - **Accessibility.** Section cards are keyboard-operable (expand/collapse with Enter/Space,
   `aria-expanded`); section status is conveyed by text, not color alone; diagram node kinds are
   also named in text; copy and Open buttons have accessible names that include the command or path.
@@ -278,8 +315,9 @@ stateDiagram-v2
 - HTTP routes and cron schedules per file. `[reused: the repo-intel index]`
 - Index status, indexed file count and indexed commit. `[reused: the repository's index state]`
 - Repository file tree at the tour's commit (paths only). `[deterministic: the repository's clone]`
-- Contents of README, contributing docs, package/build manifests, compose files, `.env.example`
-  and similar, capped per file. `[deterministic: read from the clone]`
+- Contents of allowlisted files — README, CONTRIBUTING, package/build manifests, Makefile,
+  Dockerfile, compose files, `.env.example` and similar — at depth ≤ 2, at most 20 files, minus the
+  secret exclusions (AC-44, AC-45). `[deterministic: read from the clone]`
 - TODO/FIXME comments (file, line, comment text) for First tasks, capped in number.
   `[deterministic: scan of the clone at the tour's commit]`
 - Path grounding (AC-15). `[deterministic: lookup in the file tree]`
@@ -299,27 +337,19 @@ stateDiagram-v2
   from it except the grounded "Open" link (AC-30).
 
 ## [NEEDS CLARIFICATION: …]
-Resolved by the user: Q1 (ground against every file and directory in the clone at the tour's
-commit, AC-15), Q2 (Share link dropped, AC-42), Q3 ("Open" goes to GitHub at the tour's commit,
-AC-30; no in-app viewer), Q4 (First tasks from the index, file tree and TODO/FIXME comments, sized
-small/medium, verified paths, no GitHub issues, AC-29, AC-40, AC-41).
-
-Still open (non-blocking):
-5. **Q5 — Repositories with an empty code index** (no TS/JS): allow generation from the tree and
-   manifests (as drafted), or refuse with `repo_not_indexed`?
-6. **Q6 — Regenerating one section** (e.g. a failed one) instead of the whole tour: wanted now, or
-   later?
-7. **Q7 — Risky commands:** should How to run locally visually flag commands that pipe a download
-   into a shell, delete files, or use `sudo`?
-8. **Q8 — Secret exclusion list:** exact file patterns never sent to the model.
-9. **Q9 — Limits:** the per-call input token budget, the per-section time limit, and whether a
-   generation may run longer than today's 2-minute background-job limit. Also confirm the content
-   caps drafted in AC-20, AC-21, AC-24, AC-25, AC-28, AC-29.
-10. **Cancel:** should an in-progress generation be cancellable (it costs money and may be slow)?
-11. **Regenerate confirmation:** should Regenerate on a fresh (not stale) tour ask for confirmation,
-    since it costs money? (Suggestion: yes, showing the last generation's cost.)
-12. **"last refreshed"** in the mockup: this draft reads it as when the tour was generated (AC-13),
-    not when the repository was last synced. Confirm.
-13. **e2e and seed:** this draft seeds a tour for `acme/payments-api` so an e2e flow can check the
-    five section headings, the header and a copy button without a model key. That makes the
-    feature touch the seed in `api/` too. Confirm.
+None open. Resolved by the user:
+- Q1: ground against every file and directory in the clone at the tour's commit (AC-15).
+- Q2: Share link dropped (AC-42).
+- Q3: "Open" goes to GitHub at the tour's commit; no in-app viewer (AC-30).
+- Q4: First tasks from the index, file tree and TODO/FIXME comments, sized small/medium, verified
+  paths, no GitHub issues (AC-29, AC-40, AC-41).
+- Q5: repositories with an empty code index are allowed; header says "Code index is empty" (AC-43).
+- Q6: regenerating one section is a non-goal for now.
+- Q7: no per-command flagging; the fixed note is the only warning (AC-27).
+- Q8: secret exclusion list and content allowlist (AC-44, AC-45).
+- Q9: 48,000 characters of repository input per call, 90 s per section including retries,
+  sections in parallel inside the 2-minute job limit, content caps as drafted (AC-39, AC-46, AC-47).
+- Q10: no cancel in v1.
+- Q11: Regenerate confirms (showing the last cost) only when the tour isn't stale (AC-48).
+- Q12: "generated <time>" is the tour's generation time (AC-13).
+- Q13: seeded demo tour for `acme/payments-api` and e2e flow 09, read-only (AC-49).
