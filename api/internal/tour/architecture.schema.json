@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "One or two paragraphs describing the architecture. Wrap any file or directory path in backticks, e.g. `src/api/users.ts`."
+    },
+    "nodes": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["entry", "module", "middleware", "datastore", "external"]
+          },
+          "path": {
+            "anyOf": [{ "type": "string" }, { "type": "null" }],
+            "description": "A file or directory path from the given tree, or null when this node has none."
+          }
+        },
+        "required": ["id", "label", "kind", "path"],
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "description": "A node id from nodes." },
+          "to": { "type": "string", "description": "A node id from nodes." },
+          "label": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+        },
+        "required": ["from", "to", "label"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["summary", "nodes", "edges"],
+  "additionalProperties": false
+}

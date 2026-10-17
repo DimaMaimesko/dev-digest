@@ -41,6 +41,23 @@ export type {
 } from "@devdigest/shared";
 export type { PrIntentRecord, PrIntentResponse } from "@devdigest/shared";
 export type { RunTrace, RunIntent, PromptAssembly } from "@devdigest/shared";
+export type {
+  OnboardingTourResponse,
+  OnboardingTour,
+  OnboardingGeneration,
+  TourSection,
+  TourSectionKind,
+  TourSectionStatus,
+  TourPathRef,
+  TourSummarySegment,
+  TourDiagram,
+  TourDiagramNodeKind,
+  RepoIndexReadiness,
+  ArchitectureContent,
+  PathListContent,
+  RunLocallyContent,
+  FirstTasksContent,
+} from "@devdigest/shared";
 
 /** UI-only view model for a PR list row (derives display fields from PrMeta). */
 export interface PrRowView {

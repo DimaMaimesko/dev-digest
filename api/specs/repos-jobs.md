@@ -26,6 +26,11 @@
   table with its kind, status and attempts (a failed job has `attempts` = 1).
 - Every job runs under the runner's context: closing the runner stops them.
 - Cloning and indexing are separate jobs, each with its own time limit.
+- `onboarding-tour`: one job per generation, enqueued by `POST /repos/{id}/onboarding`. It runs
+  the tour's 5 sections in parallel inside its one slot, so a generation still fits the 2-minute
+  limit. A server that stops mid-generation fails the run ("the server stopped during
+  generation") at the next start (`onboarding.Store.FailStale`, called from `cmd/api` next to
+  `reviews.FailStale`), and leaves any previous tour untouched.
 
 ## GitHub
 - The token is sent as a header per git command, never saved in the clone (`.git/config`).

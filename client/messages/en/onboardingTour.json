@@ -1,0 +1,56 @@
+{
+  "breadcrumb": "Onboarding Tour",
+  "header": {
+    "title": "Onboarding for {name}",
+    "filesIndexed": "Generated from index of {count} files",
+    "generatedAt": "generated {when}",
+    "sha": "at {sha}",
+    "model": "{provider} / {model}",
+    "cost": "cost {cost}",
+    "generate": "Generate tour",
+    "regenerate": "Regenerate",
+    "partialIndex": "Index is partial — some files were skipped.",
+    "emptyIndex": "Code index is empty — this tour uses the file tree, docs and manifests only.",
+    "regenerateConfirm": "Regenerate the tour? The last generation cost {cost}."
+  },
+  "indexNotice": {
+    "notIndexed": "Repository not indexed yet",
+    "indexing": "Repository is still being indexed"
+  },
+  "staleNotice": "The repository moved from {oldSha} to {newSha} since this tour was generated. It won't regenerate on its own.",
+  "generationBanner": {
+    "generating": "Generating the tour…",
+    "regenerating": "Regenerating — the tour below is being refreshed",
+    "failed": "Generation failed",
+    "configError": "{message} Add it in Settings → API Keys.",
+    "settingsLink": "Settings → API Keys"
+  },
+  "emptyState": {
+    "title": "No tour yet",
+    "body": "Generate a guided tour of this repository — architecture, critical paths, how to run it locally, a reading path and first tasks."
+  },
+  "sections": {
+    "architecture": "Architecture overview",
+    "critical_paths": "Critical paths",
+    "run_locally": "How to run locally",
+    "reading_path": "Guided reading path",
+    "first_tasks": "First tasks"
+  },
+  "sectionStatus": {
+    "pending": "Pending",
+    "generating": "Generating…",
+    "done": "Done",
+    "failed": "Failed"
+  },
+  "removedRefs": "{count, plural, one {# unverified reference removed} other {# unverified references removed}}",
+  "diagramUnavailable": "Diagram unavailable",
+  "open": "Open",
+  "copyCommand": "Copy command: {command}",
+  "copy": "Copy",
+  "copied": "Copied",
+  "copyFailed": "Copy failed",
+  "runLocallyNote": "Generated from repository files — review before running.",
+  "onThisPage": "On this page",
+  "noTodo": "No linked TODO",
+  "todoFrom": "TODO at {path}:{line}"
+}

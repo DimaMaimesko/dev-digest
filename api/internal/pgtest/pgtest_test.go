@@ -11,15 +11,15 @@ func TestNew(t *testing.T) {
 	ctx := context.Background()
 	a, b := pgtest.New(t), pgtest.New(t)
 
-	// Every migration ran: the last one (0012) added pr_intent.fingerprint.
-	var hasColumn bool
-	err := a.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.columns
-		WHERE table_name = 'pr_intent' AND column_name = 'fingerprint')`).Scan(&hasColumn)
+	// Every migration ran: the last one (0013) added onboarding_runs.
+	var hasTable bool
+	err := a.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM information_schema.tables
+		WHERE table_name = 'onboarding_runs')`).Scan(&hasTable)
 	if err != nil {
 		t.Fatalf("query schema: %v", err)
 	}
-	if !hasColumn {
-		t.Error("pr_intent.fingerprint is missing; migration 0012 should have added it")
+	if !hasTable {
+		t.Error("onboarding_runs is missing; migration 0013 should have added it")
 	}
 
 	// The two databases are separate.

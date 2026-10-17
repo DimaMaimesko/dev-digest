@@ -35,3 +35,18 @@ export function githubBlobUrl(
   }
   return url;
 }
+
+/**
+ * https://github.com/{owner}/{repo}/{blob|tree}/{sha}/{path}
+ * The Onboarding Tour's "Open" action (AC-30): a file opens `blob`, a
+ * directory opens `tree`, both pinned to the tour's commit sha. `path` is a
+ * `TourPathRef` that has already passed grounding server-side.
+ */
+export function githubPathUrl(
+  repoFullName: string,
+  sha: string,
+  path: string,
+  isDir: boolean,
+): string {
+  return `${HOST}/${repoFullName}/${isDir ? "tree" : "blob"}/${sha}/${encPath(path)}`;
+}

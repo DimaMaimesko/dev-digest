@@ -1,0 +1,42 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "tasks": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "size": { "type": "string", "enum": ["small", "medium"] },
+          "paths": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Files or directories from the given tree that this task touches."
+          },
+          "todo": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "path": { "type": "string" },
+                  "line": { "type": "integer" }
+                },
+                "required": ["path", "line"],
+                "additionalProperties": false
+              },
+              { "type": "null" }
+            ],
+            "description": "The (path, line) of a TODO/FIXME this task addresses, from the given scan, or null."
+          }
+        },
+        "required": ["title", "description", "size", "paths", "todo"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["tasks"],
+  "additionalProperties": false
+}

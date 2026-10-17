@@ -18,6 +18,7 @@ the flow fails, even though the e2e folder didn't change.
 | 06 onboarding | — | "Add a repository", "Repository URL" (hardcoded in `AddRepoView.tsx`) | `/onboarding` |
 | 07 settings | — | "API Keys", "Feature Models" (`messages/en/settings.json`) | `/settings/api-keys`, `/settings/models` |
 | 08 pr intent | PR #482's seeded intent in `seed.go` `demo()` (confidence `medium`, statement "…per-client rate limiting…", out-of-scope items) | the Intent panel's fixed copy — "Intent", "Confidence: {level}", "Out of scope" (`messages/en/intent.json`) | `/pulls/482`, Overview tab (default) |
+| 09 onboarding tour | `seed.go` `demoTour()`: a stored tour for `acme/payments-api`, commit `a1b2c3d4e5f6`, `files_indexed = 42`, 5 `done` sections, a `run_locally` step `pnpm install`; the repo itself has no clone and no index row | the sidebar label "Onboarding Tour" (`nav.ts`); the header strings "Onboarding for {name}", "Generated from index of {count} files", the five section titles and the index notice "Repository not indexed yet" (all `messages/en/onboardingTour.json`); the Copy button's accessible name "Copy command: {command}" (`CopyButton.tsx`) | `/repos/:repoId/tour` |
 
 So:
 - Changing the seed's demo data → run the suite.

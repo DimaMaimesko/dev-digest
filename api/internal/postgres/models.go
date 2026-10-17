@@ -64,6 +64,42 @@ type Finding struct {
 	DismissedAt        *time.Time
 }
 
+type Onboarding struct {
+	RepoID         uuid.UUID
+	Json           []byte
+	GeneratedAt    time.Time
+	CommitSha      *string
+	FilesIndexed   int32
+	IndexStatus    *string
+	CodeIndexEmpty bool
+	Provider       *string
+	Model          *string
+	TokensIn       *int32
+	TokensOut      *int32
+	CostUsd        *float64
+}
+
+type OnboardingRun struct {
+	ID             uuid.UUID
+	RepoID         uuid.UUID
+	WorkspaceID    uuid.UUID
+	Status         string
+	Error          *string
+	CommitSha      string
+	FilesIndexed   int32
+	IndexStatus    string
+	CodeIndexEmpty bool
+	Provider       string
+	Model          string
+	Sections       []byte
+	TokensIn       *int32
+	TokensOut      *int32
+	CostUsd        *float64
+	CreatedAt      time.Time
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
+}
+
 type PrIntent struct {
 	PrID        uuid.UUID
 	Intent      string

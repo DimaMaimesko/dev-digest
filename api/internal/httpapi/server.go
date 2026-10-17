@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/agents"
+	"github.com/DimaMaimesko/dev-digest/api/internal/onboarding"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
 	"github.com/DimaMaimesko/dev-digest/api/internal/pulls"
 	"github.com/DimaMaimesko/dev-digest/api/internal/repos"
@@ -30,21 +31,22 @@ import (
 
 // Server handles the API's requests.
 type Server struct {
-	db        *pgxpool.Pool
-	queries   *postgres.Queries
-	log       *slog.Logger
-	workspace uuid.UUID
-	user      uuid.UUID
-	webOrigin string
-	cloneDir  string
-	secrets   *secrets.Store
-	agents    *agents.Store
-	skills    *skills.Store
-	pulls     *pulls.Store
-	githubAPI string
-	modelAPIs ModelAPIs
-	runner    *runner.Runner
-	repos     *repos.Store
+	db         *pgxpool.Pool
+	queries    *postgres.Queries
+	log        *slog.Logger
+	workspace  uuid.UUID
+	user       uuid.UUID
+	webOrigin  string
+	cloneDir   string
+	secrets    *secrets.Store
+	agents     *agents.Store
+	skills     *skills.Store
+	pulls      *pulls.Store
+	githubAPI  string
+	modelAPIs  ModelAPIs
+	runner     *runner.Runner
+	repos      *repos.Store
+	onboarding *onboarding.Store
 
 	streams      context.Context // ends when the event streams must close
 	closeStreams context.CancelFunc
@@ -73,27 +75,31 @@ type Config struct {
 	// Repos adds, refreshes and removes repositories. Without it, those
 	// routes answer 404.
 	Repos *repos.Store
+	// Onboarding starts, tracks and stores onboarding tours. Without it,
+	// the onboarding routes answer 404.
+	Onboarding *onboarding.Store
 }
 
 // New returns a Server.
 func New(cfg Config) *Server {
 	streams, closeStreams := context.WithCancel(context.Background())
 	return &Server{
-		db:        cfg.DB,
-		queries:   postgres.New(cfg.DB),
-		log:       cfg.Log,
-		workspace: cfg.Workspace,
-		user:      cfg.User,
-		webOrigin: cfg.WebOrigin,
-		cloneDir:  cfg.CloneDir,
-		secrets:   cfg.Secrets,
-		agents:    agents.NewStore(cfg.DB),
-		skills:    skills.NewStore(cfg.DB),
-		pulls:     pulls.NewStore(cfg.DB),
-		githubAPI: cfg.GitHubAPI,
-		modelAPIs: cfg.ModelAPIs,
-		runner:    cfg.Runner,
-		repos:     cfg.Repos,
+		db:         cfg.DB,
+		queries:    postgres.New(cfg.DB),
+		log:        cfg.Log,
+		workspace:  cfg.Workspace,
+		user:       cfg.User,
+		webOrigin:  cfg.WebOrigin,
+		cloneDir:   cfg.CloneDir,
+		secrets:    cfg.Secrets,
+		agents:     agents.NewStore(cfg.DB),
+		skills:     skills.NewStore(cfg.DB),
+		pulls:      pulls.NewStore(cfg.DB),
+		githubAPI:  cfg.GitHubAPI,
+		modelAPIs:  cfg.ModelAPIs,
+		runner:     cfg.Runner,
+		repos:      cfg.Repos,
+		onboarding: cfg.Onboarding,
 
 		streams:      streams,
 		closeStreams: closeStreams,
@@ -158,6 +164,10 @@ func (s *Server) Handler() http.Handler {
 		mux.HandleFunc("POST /pulls/{id}/review", s.startReview)
 		mux.HandleFunc("GET /runs/{id}/events", s.runEvents)
 		mux.HandleFunc("POST /runs/{id}/cancel", s.cancelRun)
+	}
+	if s.onboarding != nil {
+		mux.HandleFunc("GET /repos/{id}/onboarding", s.getOnboardingTour)
+		mux.HandleFunc("POST /repos/{id}/onboarding", s.generateOnboardingTour)
 	}
 	mux.HandleFunc("DELETE /reviews/{id}", s.deleteReview)
 	mux.HandleFunc("DELETE /runs/{id}", s.deleteRun)

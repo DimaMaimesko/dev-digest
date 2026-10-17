@@ -22,7 +22,7 @@ status codes, side effects and the rules a change must keep.
   path, commits by time, findings by location.
 - Multi-statement writes are one transaction.
 
-## Routes (50)
+## Routes (52)
 
 ### Health and workspace
 | Route | Notes |
@@ -43,6 +43,8 @@ status codes, side effects and the rules a change must keep.
 | `GET /repos/{id}/index-state` | The index state (the **Indexed** badge, not rendered by the starter UI yet). Unknown repo → the "no data" state, not 404 |
 | `GET /repos/{id}/pulls` | With a GitHub token, syncs the 50 most recently updated PRs first; without one, or when GitHub fails, serves the saved ones. Each has `score` (latest review) and `cost_usd` (all its runs; null when none is known) |
 | `POST /repos/{id}/poll` | Like the list sync, but fails: 502 `github_error`, 500 `config_error` without a token. The web app doesn't call it |
+| `GET /repos/{id}/onboarding` | The repo's index readiness, its stored onboarding tour (`null` when none) and its latest generation (`null` when none). Unknown repo → 404 |
+| `POST /repos/{id}/onboarding` | No body. 202 with the generation, new or already queued/running (same id on a second call while one is live). 409 `repo_not_indexed` without a completed index. 400 `config_error` (`"<KEY> is not configured for provider <provider>"`) when the onboarding feature's model has no configured client |
 
 ### Pull requests
 | Route | Notes |
@@ -99,8 +101,8 @@ A skill name is unique in the workspace: a clash on create or rename is a 422 on
 
 ## Registered only when configured
 The repo writes (`POST /repos`, refresh, resync, delete) need `repos.Store`; review, events
-and cancel need `runner.Runner`. `cmd/api` always wires both; tests may leave them out,
-and then those routes are 404.
+and cancel need `runner.Runner`; the onboarding tour routes need `onboarding.Store`.
+`cmd/api` always wires all three; tests may leave them out, and then those routes are 404.
 
 ## Changing this contract
 - A new route: register it in `Handler`, add a test next to the handler, update this file

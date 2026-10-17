@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "steps": {
+      "type": "array",
+      "maxItems": 15,
+      "items": {
+        "type": "object",
+        "properties": {
+          "command": { "type": "string", "description": "One shell command, a single line." },
+          "comment": { "anyOf": [{ "type": "string" }, { "type": "null" }] }
+        },
+        "required": ["command", "comment"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["steps"],
+  "additionalProperties": false
+}

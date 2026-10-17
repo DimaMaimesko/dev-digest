@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
+	"github.com/DimaMaimesko/dev-digest/api/internal/onboarding"
 	"github.com/DimaMaimesko/dev-digest/api/internal/pgtest"
 	"github.com/DimaMaimesko/dev-digest/api/internal/repos"
 	"github.com/DimaMaimesko/dev-digest/api/internal/runner"
@@ -36,8 +37,9 @@ type fixture struct {
 	env         map[string]string
 	githubAPI   string // empty: no syncing from GitHub
 	modelAPIs   httpapi.ModelAPIs
-	runner      *runner.Runner // nil: the review routes aren't served
-	repos       *repos.Store   // nil: adding, refreshing and deleting repositories aren't served
+	runner      *runner.Runner    // nil: the review routes aren't served
+	repos       *repos.Store      // nil: adding, refreshing and deleting repositories aren't served
+	onboarding  *onboarding.Store // nil: the onboarding routes aren't served
 }
 
 const cloneDir = "/work/clones"
@@ -80,17 +82,18 @@ func (f fixture) serve(req *http.Request) *http.Response {
 // api returns a Server on the fixture's database, secrets and runner.
 func (f fixture) api() *httpapi.Server {
 	return httpapi.New(httpapi.Config{
-		DB:        f.db,
-		Workspace: f.workspace,
-		User:      f.user,
-		WebOrigin: webOrigin,
-		CloneDir:  cloneDir,
-		Secrets:   secrets.New(f.secretsFile, func(k string) string { return f.env[k] }),
-		Log:       quiet,
-		GitHubAPI: f.githubAPI,
-		ModelAPIs: f.modelAPIs,
-		Runner:    f.runner,
-		Repos:     f.repos,
+		DB:         f.db,
+		Workspace:  f.workspace,
+		User:       f.user,
+		WebOrigin:  webOrigin,
+		CloneDir:   cloneDir,
+		Secrets:    secrets.New(f.secretsFile, func(k string) string { return f.env[k] }),
+		Log:        quiet,
+		GitHubAPI:  f.githubAPI,
+		ModelAPIs:  f.modelAPIs,
+		Runner:     f.runner,
+		Repos:      f.repos,
+		Onboarding: f.onboarding,
 	})
 }
 

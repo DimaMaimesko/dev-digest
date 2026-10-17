@@ -1,0 +1,20 @@
+{
+  "name": "Onboarding Tour shows the seeded tour for an unindexed repo",
+  "description": "From the sidebar, open the Onboarding Tour for acme/payments-api and confirm the seeded tour renders: the header (full name, 42 files), all five section titles, the 'Repository not indexed yet' notice (the seeded repo has no clone and no index), and the run-locally Copy button for 'pnpm install' (not clicked, so the flow stays read-only and doesn't depend on the clipboard). Read-only seeded data (no model call). Assumes a freshly-seeded DB where acme/payments-api is the first repo (see e2e/README.md).",
+  "steps": [
+    { "cmd": ["open", "{BASE}/"], "label": "load the app root" },
+    { "cmd": ["wait", "--url", "/pulls"], "label": "land on the PR list" },
+    { "cmd": ["find", "text", "Onboarding Tour", "click"], "label": "click the sidebar's Onboarding Tour item" },
+    { "cmd": ["wait", "--url", "/tour"], "label": "navigate to the tour route" },
+    { "cmd": ["wait", "--load", "networkidle"], "label": "tour data settles" },
+    { "cmd": ["wait", "--text", "Onboarding for acme/payments-api"], "label": "seeded header renders the repo's full name" },
+    { "cmd": ["wait", "--text", "Generated from index of 42 files"], "label": "seeded header renders the seeded file count" },
+    { "cmd": ["wait", "--text", "Architecture overview"], "label": "architecture section title renders" },
+    { "cmd": ["wait", "--text", "Critical paths"], "label": "critical paths section title renders" },
+    { "cmd": ["wait", "--text", "How to run locally"], "label": "run-locally section title renders" },
+    { "cmd": ["wait", "--text", "Guided reading path"], "label": "reading path section title renders" },
+    { "cmd": ["wait", "--text", "First tasks"], "label": "first tasks section title renders" },
+    { "cmd": ["wait", "--text", "Repository not indexed yet"], "label": "the seeded repo has no clone, so the index notice shows" },
+    { "cmd": ["find", "role", "button", "text", "--name", "Copy command: pnpm install"], "label": "the run-locally Copy button for the seeded first step exists (not clicked)" }
+  ]
+}

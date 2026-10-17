@@ -37,6 +37,7 @@ import (
 	"github.com/DimaMaimesko/dev-digest/api/internal/github"
 	"github.com/DimaMaimesko/dev-digest/api/internal/httpapi"
 	"github.com/DimaMaimesko/dev-digest/api/internal/jobs"
+	"github.com/DimaMaimesko/dev-digest/api/internal/onboarding"
 	"github.com/DimaMaimesko/dev-digest/api/internal/openai"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
 	"github.com/DimaMaimesko/dev-digest/api/internal/repointel"
@@ -130,6 +131,18 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 		log.Info("marked runs left running by a stopped server as failed", "runs", n)
 	}
 
+	onboardingStore := onboarding.New(onboarding.Config{
+		DB:   pool,
+		Jobs: background,
+		LLM:  reviewModel(store, modelAPIs, claude),
+		Log:  log,
+	})
+	if n, err := onboardingStore.FailStale(ctx); err != nil {
+		return fmt.Errorf("mark stale onboarding runs failed: %w", err)
+	} else if n > 0 {
+		log.Info("marked onboarding runs left running by a stopped server as failed", "runs", n)
+	}
+
 	api := httpapi.New(httpapi.Config{
 		DB:        pool,
 		Workspace: workspace,
@@ -148,6 +161,7 @@ func run(ctx context.Context, getenv func(string) string, logOut io.Writer) erro
 			Token:    githubToken,
 			Indexer:  repointel.NewIndexer(pool, githubToken),
 		}),
+		Onboarding: onboardingStore,
 	})
 	srv := &http.Server{Handler: api.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	// Shutdown waits for every request, and a run's live log would otherwise

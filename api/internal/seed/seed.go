@@ -14,7 +14,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	"github.com/DimaMaimesko/dev-digest/api/internal/onboarding"
 	"github.com/DimaMaimesko/dev-digest/api/internal/postgres"
+	"github.com/DimaMaimesko/dev-digest/api/internal/tour"
 )
 
 // The agents' system prompts. They are copies of docs/agent-prompts, which
@@ -122,6 +124,9 @@ func demo(ctx context.Context, q *postgres.Queries, workspace, user uuid.UUID) e
 	if err != nil {
 		return err
 	}
+	if err := demoTour(ctx, q, workspace, repo); err != nil {
+		return err
+	}
 	if exists, err := q.SeedPullExists(ctx, postgres.SeedPullExistsParams{RepoID: repo, Number: 482}); err != nil || exists {
 		return err
 	}
@@ -221,6 +226,130 @@ func demoIntent(ctx context.Context, q *postgres.Queries, pull uuid.UUID) error 
 		Provider:    new("anthropic"),
 		Model:       new("haiku"),
 	})
+}
+
+// The demo tour's commit, index and model, matching the demo PR's head
+// commit (plan Q13): the repository has no clone and no index, so the
+// Onboarding Tour screen shows this stored tour with "Repository not
+// indexed yet" and a disabled Regenerate — the spec's edge case, and what
+// e2e flow 09 relies on.
+const (
+	demoTourCommit = "a1b2c3d4e5f6"
+	demoTourFiles  = int32(42)
+	demoTourCost   = 0.0042
+)
+
+// demoTour seeds a stored onboarding tour for the demo repository, so the
+// Onboarding Tour screen and e2e flow 09 have something to show without any
+// API key. It runs before SeedPullExists' early return, so it is idempotent
+// on its own: a database seeded once already has a row GetOnboardingTour
+// finds.
+func demoTour(ctx context.Context, q *postgres.Queries, workspace, repo uuid.UUID) error {
+	if _, err := q.GetOnboardingTour(ctx, postgres.GetOnboardingTourParams{WorkspaceID: workspace, RepoID: repo}); err == nil {
+		return nil
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return err
+	}
+
+	sections, err := json.Marshal([]onboarding.TourSection{
+		{Kind: tour.KindArchitecture, Status: "done", Content: demoTourArchitecture()},
+		{Kind: tour.KindCriticalPaths, Status: "done", Content: demoTourCriticalPaths()},
+		{Kind: tour.KindRunLocally, Status: "done", Content: demoTourRunLocally()},
+		{Kind: tour.KindReadingPath, Status: "done", Content: demoTourReadingPath()},
+		{Kind: tour.KindFirstTasks, Status: "done", Content: demoTourFirstTasks()},
+	})
+	if err != nil {
+		return err
+	}
+	return q.UpsertOnboardingTour(ctx, postgres.UpsertOnboardingTourParams{
+		RepoID: repo, Json: sections, CommitSha: new(demoTourCommit), FilesIndexed: demoTourFiles,
+		IndexStatus: new("full"), CodeIndexEmpty: false, Provider: new(agentProvider), Model: new(agentModel),
+		TokensIn: new(int32(6200)), TokensOut: new(int32(940)), CostUsd: new(demoTourCost),
+	})
+}
+
+// demoTourArchitecture is the seeded architecture section's content, citing
+// the demo PR's changed files.
+func demoTourArchitecture() tour.ArchitectureContent {
+	ref := func(p string) tour.Ref { return tour.Ref{Path: p} }
+	return tour.ArchitectureContent{
+		Summary: []tour.SummarySegment{
+			tour.TextSegment("Public requests reach the API through "),
+			tour.PathSegment(ref("src/api/users.ts")),
+			tour.TextSegment(" and "),
+			tour.PathSegment(ref("src/api/public/webhooks.ts")),
+			tour.TextSegment(", pass through the rate limiter in "),
+			tour.PathSegment(ref("src/middleware/ratelimit.ts")),
+			tour.TextSegment(", and read their settings from "),
+			tour.PathSegment(ref("src/config.ts")),
+			tour.TextSegment(". See "),
+			tour.PathSegment(ref("README.md")),
+			tour.TextSegment(" for the project overview."),
+		},
+		Diagram: &tour.Diagram{
+			Nodes: []tour.DiagramNode{
+				{ID: "users_api", Label: "Users API", Kind: tour.NodeEntry, Path: new("src/api/users.ts")},
+				{ID: "webhooks_api", Label: "Public Webhooks", Kind: tour.NodeEntry, Path: new("src/api/public/webhooks.ts")},
+				{ID: "ratelimit", Label: "Rate Limiter", Kind: tour.NodeMiddleware, Path: new("src/middleware/ratelimit.ts")},
+				{ID: "config", Label: "Config", Kind: tour.NodeModule, Path: new("src/config.ts")},
+				{ID: "postgres", Label: "Postgres", Kind: tour.NodeDatastore},
+			},
+			Edges: []tour.DiagramEdge{
+				{From: "users_api", To: "ratelimit"},
+				{From: "webhooks_api", To: "ratelimit"},
+				{From: "ratelimit", To: "config"},
+				{From: "users_api", To: "postgres"},
+			},
+		},
+	}
+}
+
+// demoTourCriticalPaths is the seeded critical-paths section's content.
+func demoTourCriticalPaths() tour.PathListContent {
+	return tour.PathListContent{Items: []tour.PathItem{
+		{Path: "src/middleware/ratelimit.ts", Reason: "Implements the token-bucket limiter every public request passes through."},
+		{Path: "src/config.ts", Reason: "Loads the environment configuration the rest of the service reads."},
+		{Path: "src/api/public/webhooks.ts", Reason: "The one public endpoint that accepts unauthenticated traffic."},
+	}}
+}
+
+// demoTourRunLocally is the seeded run-locally section's content. e2e flow
+// 09 checks for the "Copy command: pnpm install" button, so its command
+// must stay "pnpm install".
+func demoTourRunLocally() tour.RunLocallyContent {
+	return tour.RunLocallyContent{Steps: []tour.RunStep{
+		{Command: "pnpm install"},
+		{Command: "cp .env.example .env", Comment: new("then fill in the keys")},
+		{Command: "docker compose up -d postgres"},
+		{Command: "pnpm dev"},
+	}}
+}
+
+// demoTourReadingPath is the seeded reading-path section's content.
+func demoTourReadingPath() tour.PathListContent {
+	return tour.PathListContent{Items: []tour.PathItem{
+		{Path: "README.md", Reason: "Start here for the project overview."},
+		{Path: "package.json", Reason: "See the scripts and dependencies before touching any code."},
+		{Path: "src/config.ts", Reason: "Then see how configuration is loaded before the API endpoints that use it."},
+		{Path: "src/middleware/ratelimit.ts", Reason: "Read the rate limiter every public request passes through."},
+		{Path: "src/api/users.ts", Reason: "Finally see a concrete endpoint that depends on it."},
+	}}
+}
+
+// demoTourFirstTasks is the seeded first-tasks section's content, with one
+// task addressing a TODO in the rate limiter.
+func demoTourFirstTasks() tour.FirstTasksContent {
+	return tour.FirstTasksContent{Tasks: []tour.Task{
+		{
+			Title: "Move the rate limiter's state to Redis",
+			Description: "The limiter keeps its token buckets in memory, which resets on deploy and doesn't " +
+				"work once the API runs on more than one instance.",
+			Size:  tour.SizeMedium,
+			Paths: []tour.PathRef{{Path: "src/middleware/ratelimit.ts"}},
+			Todo: &tour.TodoRef{Path: "src/middleware/ratelimit.ts", Line: 42,
+				Text: "TODO: move limiter state to Redis before scaling past one instance"},
+		},
+	}}
 }
 
 // Demo run's outcome, as a finished review run records it.
