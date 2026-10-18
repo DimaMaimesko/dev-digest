@@ -14,20 +14,6 @@ Symptom: … · Cause: … · Rule: … · Evidence: file:line · Promoted: no
 
 ---
 
-## 2026-10-18 · context · A review of a PR nobody opened fails with "nothing to review"
-Symptom: a run started by MCP or curl on a fresh PR fails: "Failed to load PR diff: nothing to review: …". (Before the fix it approved the PR with 100.)
-Cause: the clone lacks the new head commit, and only `GET /pulls/{id}` saves the patches loadDiff falls back to; listing pulls doesn't.
-Rule: before a review started outside the UI (MCP, curl, an eval), call `GET /pulls/{id}` first.
-Evidence: api/internal/runner/inputs.go:21-48; api/specs/http-api.md:52; TestNothingToReview
-Promoted: no
-
-## 2026-10-18 · mistake · devdigest_run_agent reports an error, but the run has started
-Symptom: `json: cannot unmarshal object into Go value of type []mcpserver.startedRunJSON`, yet `agent_runs` has the run as `running`.
-Cause: `POST /pulls/{id}/review` answers `{"pr_id","runs":[…],"reviews":[]}`; the tool decodes a bare array.
-Rule: don't retry the tool, it starts a second paid run; read the run from `GET /pulls/{id}/runs`. The fix: decode the `runs` field.
-Evidence: api/internal/mcpserver/tools.go:167; api/specs/http-api.md:60
-Promoted: no
-
 ## 2026-10-08 · context · PR files, commits and comments are one GitHub page (max 100)
 Cause: the GitHub client fetches `/pulls/{n}/files|commits|comments?per_page=100` once, no paging
 Rule: never treat the served file list as complete; `files_count` can exceed it. Paging is an api/ change

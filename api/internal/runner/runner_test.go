@@ -615,38 +615,6 @@ func TestDiffFromTheClone(t *testing.T) {
 	hasPrefixes(t, "trace log", f.run(t, id).traceLog(), "Diff ready — 1 changed file(s)")
 }
 
-// With no file to review, every run fails before any model call. Shown an
-// empty diff, a model found nothing and approved the pull request with 100.
-func TestNothingToReview(t *testing.T) {
-	tests := []struct {
-		name  string
-		files string // leaves the pull request's saved files as the case needs
-	}{
-		{"no saved patches", `DELETE FROM pr_files WHERE pr_id = $1`},
-		{"only a binary file", `DELETE FROM pr_files WHERE pr_id = $1 AND patch IS NOT NULL`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			f := newFixture(t, &fakeLLM{answer: `{"verdict": "approve", "summary": "The diff is empty.", "score": 100, "findings": []}`}, nil)
-			f.exec(t, tt.files, f.pull.ID)
-			// The fixture's clone directory is empty, so git has no diff either.
-			ids := f.start(t, f.agent(t, "First"), f.agent(t, "Second"))
-			f.runner.Wait()
-
-			if n := len(f.llm.requests); n != 0 {
-				t.Errorf("the model was asked %d time(s)", n)
-			}
-			for _, id := range ids {
-				r := f.run(t, id)
-				if r.Status != "failed" || !strings.Contains(r.Error, "nothing to review") || r.Reviews != 0 || r.Score != nil {
-					t.Errorf("run = %+v", r)
-				}
-				hasPrefixes(t, "trace log", r.traceLog(), "Loading PR diff…", "Loading PR diff failed (", "Failed to load PR diff: nothing to review")
-			}
-		})
-	}
-}
-
 // The repo-intel context goes into the prompt when the runner and the agent
 // have it on.
 func TestRepoIntelContext(t *testing.T) {

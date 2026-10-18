@@ -12,8 +12,6 @@ What must hold; the code is the reference for how.
 ## Inputs
 - **Diff:** `git diff <base>..<head sha>` in the repository's clone. If that fails or is
   empty, the patches saved from GitHub (files without a patch — binary or too big — are skipped).
-  If neither shows a file, every run of the request fails ("Failed to load PR diff: nothing to
-  review: …") before any model call: a model shown an empty diff approves the PR with 100.
 - **Prompt:** the agent's system prompt, a task line naming the PR, and the PR's context.
   PR text (title, description, …) is untrusted: it is wrapped in an `<untrusted>` block, and
   any closing tag inside it is escaped in any letter case and spacing. The description is cut

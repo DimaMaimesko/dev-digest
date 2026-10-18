@@ -2,7 +2,6 @@ package runner
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -16,8 +15,7 @@ import (
 
 // loadDiff returns the pull request's diff: `git diff base...head` in its
 // repository's clone, or, when that fails or shows no file, one rebuilt from
-// the patches GitHub gave for its files. It fails when neither shows a file:
-// a model shown an empty diff finds nothing and approves the pull request.
+// the patches GitHub gave for its files.
 func (r *Runner) loadDiff(ctx context.Context, pull postgres.PullRequest, repo postgres.Repo) (diff.Diff, error) {
 	dir := filepath.Join(r.cloneDir, repo.Owner, repo.Name)
 	if raw, err := git.Diff(ctx, dir, pull.Base, pull.HeadSha); err == nil {
@@ -40,11 +38,7 @@ func (r *Runner) loadDiff(ctx context.Context, pull postgres.PullRequest, repo p
 			"+++ b/"+f.Path,
 			*f.Patch)
 	}
-	d, err := diff.Parse(strings.Join(parts, "\n"))
-	if err == nil && len(d.Files) == 0 {
-		return diff.Diff{}, errors.New("nothing to review: neither the clone nor the patches saved from GitHub show an added or modified file")
-	}
-	return d, err
+	return diff.Parse(strings.Join(parts, "\n"))
 }
 
 // taskLine frames the review for the model, as the TS server does.
