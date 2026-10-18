@@ -114,6 +114,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /repos", s.listRepos)
 	mux.HandleFunc("GET /repos/{id}/pulls", s.listPulls)
 	mux.HandleFunc("POST /repos/{id}/poll", s.pollRepo)
+	mux.HandleFunc("GET /repos/{id}/authors", s.listAuthors)
 	mux.HandleFunc("GET /pulls/{id}", s.getPull)
 	mux.HandleFunc("GET /pulls/{id}/intent", s.getPullIntent)
 	mux.HandleFunc("GET /pulls/{id}/comments", s.listComments)
